@@ -1,11 +1,20 @@
 "use server";
 
-import { and, eq, inArray, isNotNull, isNull, like, or } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, like, or } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
-import { files, folderPermissions, folders, shareLinkFiles, shareLinks, user } from "@/db/schema";
+import {
+  files,
+  folderPermissions,
+  folders,
+  invitations,
+  shareLinkFiles,
+  shareLinks,
+  user,
+} from "@/db/schema";
 import { auth, isAdmin, requireSession } from "@/lib/auth";
 import {
   ForbiddenError,
@@ -14,6 +23,7 @@ import {
   requireFolderRole,
   roleAtLeast,
 } from "@/server/permissions";
+import { INVITE_TTL_DAYS, newInviteToken, resolveInvitation, sendInviteEmail } from "@/server/invitations";
 import { purgeFiles, purgeFolderTree } from "@/server/purge";
 import { listFolderMembers } from "@/server/queries";
 import { listShareLinks, newShareToken } from "@/server/share-links";
@@ -386,29 +396,85 @@ export async function purgeFile(fileId: string) {
 // ---------------------------------------------------------------------------
 
 const inviteSchema = z.object({
-  name: z.string().trim().min(1, "Nhập tên"),
   email: z.email("Email không hợp lệ").transform((s) => s.toLowerCase()),
   role: z.enum(["user", "admin"]),
 });
 
 /**
- * Creates the account without a password, then sends a reset-password link
- * which doubles as the invite: setting a password creates the credential.
+ * Creates (or renews) the invite link for an email and mails it. The link is
+ * also returned so the admin can pass it on directly; the account itself is
+ * created only when the invitee opens it and picks a name and password.
  */
 export async function inviteUser(input: z.input<typeof inviteSchema>) {
   const session = await requireSession();
   return run(async () => {
     if (!isAdmin(session)) throw new ForbiddenError();
-    const { name, email, role } = inviteSchema.parse(input);
+    const { email, role } = inviteSchema.parse(input);
     const [existing] = await db.select({ id: user.id }).from(user).where(eq(user.email, email));
     if (existing) throw new ForbiddenError("Email này đã có tài khoản");
-    await auth.api.createUser({ body: { email, name, role }, headers: await headers() });
-    await auth.api.requestPasswordReset({
-      body: { email, redirectTo: `${process.env.BETTER_AUTH_URL}/reset-password` },
-    });
+    const token = newInviteToken();
+    const fields = {
+      token,
+      role,
+      invitedBy: session.user.id,
+      expiresAt: new Date(Date.now() + INVITE_TTL_DAYS * 86_400_000),
+      createdAt: new Date(),
+    };
+    await db
+      .insert(invitations)
+      .values({ email, ...fields })
+      .onConflictDoUpdate({ target: invitations.email, set: fields });
+    const emailed = await sendInviteEmail(email, token, session.user.name);
+    return { token, emailed };
   });
 }
 
+export async function revokeInvite(invitationId: string) {
+  const session = await requireSession();
+  return run(async () => {
+    if (!isAdmin(session)) throw new ForbiddenError();
+    await db.delete(invitations).where(eq(invitations.id, z.uuid().parse(invitationId)));
+  });
+}
+
+const acceptSchema = z.object({
+  token: z.string(),
+  name: z.string().trim().min(1, "Nhập tên").max(100, "Tên quá dài"),
+  password: z.string().min(8, "Mật khẩu tối thiểu 8 ký tự").max(128, "Mật khẩu quá dài"),
+});
+
+/** Public: the invitee creates their account from the link, then is signed in. */
+export async function acceptInvite(input: z.input<typeof acceptSchema>) {
+  const res = await run(async () => {
+    const { token, name, password } = acceptSchema.parse(input);
+    const resolved = await resolveInvitation(token);
+    if (resolved.status === "registered") {
+      throw new ForbiddenError("Email này đã có tài khoản, hãy đăng nhập");
+    }
+    // Consume the invite first, so the same link can't create two accounts.
+    const [invite] = await db
+      .delete(invitations)
+      .where(and(eq(invitations.token, token), gt(invitations.expiresAt, new Date())))
+      .returning();
+    if (!invite) throw new ForbiddenError("Link mời đã hết hạn hoặc đã được dùng");
+    try {
+      await auth.api.createUser({
+        body: { email: invite.email, name, password, role: invite.role as "user" | "admin" },
+      });
+    } catch (err) {
+      await db.insert(invitations).values(invite).onConflictDoNothing();
+      throw err;
+    }
+    await auth.api.signInEmail({
+      body: { email: invite.email, password },
+      headers: await headers(),
+    });
+  });
+  if (!res.error) redirect("/");
+  return res;
+}
+
+/** Accounts invited before invite links existed: re-send their set-password email. */
 export async function resendInvite(userId: string) {
   const session = await requireSession();
   return run(async () => {

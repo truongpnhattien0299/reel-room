@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { sendEmail } from "@/lib/email";
+import { escapeHtml, sendEmail } from "@/lib/email";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: "pg", schema }),
@@ -24,7 +24,7 @@ export const auth = betterAuth({
       await sendEmail(
         user.email,
         "Đặt mật khẩu ReelRoom",
-        `<p>Chào ${user.name},</p>
+        `<p>Chào ${escapeHtml(user.name)},</p>
          <p>Bấm vào link dưới đây để đặt mật khẩu cho tài khoản ReelRoom của bạn:</p>
          <p><a href="${url}">${url}</a></p>
          <p>Link hết hạn sau 24 giờ.</p>`,

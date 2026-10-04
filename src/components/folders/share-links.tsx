@@ -3,6 +3,7 @@
 import { CheckIcon, CopyIcon, FolderIcon, ImagesIcon, Link2Icon, XIcon } from "lucide-react";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { absoluteUrl, copyText, CopyLinkField, useCopy } from "@/components/copy-link";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -98,57 +99,7 @@ export function ExpiryPicker({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Copying
-// ---------------------------------------------------------------------------
-
-const absoluteLink = (token: string) => `${window.location.origin}${shareLinkPath(token)}`;
-
-async function copyLink(token: string) {
-  try {
-    await navigator.clipboard.writeText(absoluteLink(token));
-    return true;
-  } catch {
-    // Clipboard access can be refused (e.g. no recent user gesture).
-    return false;
-  }
-}
-
-function useCopy() {
-  const [copied, setCopied] = useState<string | null>(null);
-  useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(null), 1600);
-    return () => clearTimeout(t);
-  }, [copied]);
-  return {
-    copied,
-    copy: async (token: string) => {
-      if (await copyLink(token)) setCopied(token);
-      else toast.error("Không sao chép được, hãy copy link thủ công");
-    },
-  };
-}
-
-/** Read-only link with a copy button. Client-only: shown once a link is created. */
-export function CopyLinkField({ token }: { token: string }) {
-  const { copied, copy } = useCopy();
-  return (
-    <div className="flex gap-2">
-      <Input
-        readOnly
-        value={absoluteLink(token)}
-        aria-label="Link chia sẻ"
-        className="font-mono text-xs"
-        onFocus={(e) => e.currentTarget.select()}
-      />
-      <Button onClick={() => copy(token)}>
-        {copied === token ? <CheckIcon data-icon="inline-start" /> : <CopyIcon data-icon="inline-start" />}
-        {copied === token ? "Đã chép" : "Sao chép"}
-      </Button>
-    </div>
-  );
-}
+const linkUrl = (token: string) => absoluteUrl(shareLinkPath(token));
 
 // ---------------------------------------------------------------------------
 // Folder links (inside the share dialog)
@@ -198,7 +149,7 @@ export function FolderShareLinks({
       setError(undefined);
       setFresh(res.data.token);
       await reload();
-      if (await copyLink(res.data.token)) toast.success("Đã tạo và sao chép link");
+      if (await copyText(linkUrl(res.data.token))) toast.success("Đã tạo và sao chép link");
       else toast.success("Đã tạo link");
     });
   }
@@ -257,9 +208,9 @@ export function FolderShareLinks({
                     variant="ghost"
                     size="icon-sm"
                     aria-label="Sao chép link"
-                    onClick={() => copy(l.token)}
+                    onClick={() => copy(linkUrl(l.token))}
                   >
-                    {copied === l.token ? <CheckIcon /> : <CopyIcon />}
+                    {copied === linkUrl(l.token) ? <CheckIcon /> : <CopyIcon />}
                   </Button>
                 )}
                 {canRevoke && (
@@ -341,7 +292,7 @@ export function ShareFilesDialog({
 
         {token ? (
           <div className="flex flex-col gap-2">
-            <CopyLinkField token={token} />
+            <CopyLinkField path={shareLinkPath(token)} label="Link chia sẻ" />
             <p className="text-xs text-muted-foreground">
               Xem lại hoặc thu hồi link trong mục Chia sẻ của folder.
             </p>

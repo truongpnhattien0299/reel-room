@@ -1,7 +1,7 @@
 import { and, eq, isNotNull, isNull, lt, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { files, folders, shareLinks } from "@/db/schema";
+import { files, folders, invitations, shareLinks } from "@/db/schema";
 import { deleteObject, thumbKey } from "@/lib/r2";
 import { purgeFiles, purgeFolderTree } from "@/server/purge";
 import { TRASH_RETENTION_DAYS } from "@/server/queries";
@@ -14,7 +14,7 @@ const DAY = 24 * 60 * 60 * 1000;
  *   removed by the R2 lifecycle rule, not here);
  * - permanently delete what has sat in the trash past the retention period;
  * - drop share links expired for a while (kept a bit so visitors are told
- *   "expired" rather than "invalid").
+ *   "expired" rather than "invalid"), and likewise unused invites.
  */
 export async function GET(req: Request) {
   if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -59,8 +59,14 @@ export async function GET(req: Request) {
     .where(lt(shareLinks.expiresAt, cutoff))
     .returning({ id: shareLinks.id });
 
+  const expiredInvites = await db
+    .delete(invitations)
+    .where(lt(invitations.expiresAt, cutoff))
+    .returning({ id: invitations.id });
+
   return Response.json({
     abandonedUploads: stale.length,
+    expiredInvites: expiredInvites.length,
     expiredLinks: expiredLinks.length,
     purgedFolders: expiredFolders.length,
     purgedFiles,

@@ -23,3 +23,6 @@ export function sharedMediaUrls(token: string): MediaUrls {
 }
 
 export const shareLinkPath = (token: string) => `/s/${token}`;
+
+/** Sign-up page for an invited user. */
+export const invitePath = (token: string) => `/invite/${token}`;

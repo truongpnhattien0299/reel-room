@@ -242,6 +242,24 @@ export const shareLinkFiles = pgTable(
   ],
 );
 
+/**
+ * Pending invites. The row is consumed when the invitee creates their
+ * account, so at most one live link exists per email.
+ */
+export const invitations = pgTable(
+  "invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    token: text("token").notNull().unique(),
+    email: text("email").notNull().unique(),
+    role: text("role").notNull().default("user"),
+    invitedBy: text("invited_by").references(() => user.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("invitations_expires_idx").on(t.expiresAt)],
+);
+
 export const foldersRelations = relations(folders, ({ many }) => ({
   files: many(files),
   permissions: many(folderPermissions),
@@ -266,3 +284,4 @@ export type Folder = typeof folders.$inferSelect;
 export type FileRow = typeof files.$inferSelect;
 export type FolderRole = (typeof folderRole.enumValues)[number];
 export type ShareLink = typeof shareLinks.$inferSelect;
+export type Invitation = typeof invitations.$inferSelect;
