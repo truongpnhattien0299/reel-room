@@ -14,6 +14,7 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!api|login|reset-password|_next/static|_next/image|favicon.ico).*)",
+    // s/: public share links, viewable without an account.
+    "/((?!api|login|reset-password|s/|_next/static|_next/image|favicon.ico).*)",
   ],
 };

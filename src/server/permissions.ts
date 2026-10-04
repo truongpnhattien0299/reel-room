@@ -2,7 +2,7 @@ import "server-only";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { folderPermissions, folders, type Folder, type FolderRole } from "@/db/schema";
-import { isAdmin, type Session } from "@/lib/auth";
+import type { Session } from "@/lib/auth";
 
 const RANK: Record<FolderRole, number> = { viewer: 1, editor: 2, owner: 3 };
 
@@ -20,13 +20,21 @@ export async function getEffectiveRole(
   session: Session,
   folder: Pick<Folder, "path">,
 ): Promise<FolderRole | null> {
-  if (isAdmin(session)) return "owner";
+  return getUserRole(session.user, folder);
+}
+
+/** Same as `getEffectiveRole`, for a user other than the current one. */
+export async function getUserRole(
+  u: { id: string; role?: string | null },
+  folder: Pick<Folder, "path">,
+): Promise<FolderRole | null> {
+  if (u.role === "admin") return "owner";
   const grants = await db
     .select({ role: folderPermissions.role })
     .from(folderPermissions)
     .where(
       and(
-        eq(folderPermissions.userId, session.user.id),
+        eq(folderPermissions.userId, u.id),
         inArray(folderPermissions.folderId, ancestorIds(folder)),
       ),
     );

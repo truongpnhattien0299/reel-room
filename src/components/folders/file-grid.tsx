@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Link2Icon, ListChecksIcon, XIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { isVideo } from "@/lib/media";
 import { cn } from "@/lib/utils";
 import { renameFile, trashFile } from "@/server/actions";
@@ -9,17 +11,21 @@ import { ConfirmDialog } from "./confirm-dialog";
 import { FileCard } from "./file-card";
 import { MediaPreview } from "./media-preview";
 import { NameDialog } from "./name-dialog";
+import { ShareFilesDialog } from "./share-links";
 
 type Filter = "all" | "image" | "video";
 
 export function FileGrid({
   files,
   canEdit,
+  shareFolderId,
   folderName,
   initialFileId,
 }: {
   files: FileItem[];
   canEdit: boolean;
+  /** Lets the user pick files and share them by link (they live in this folder). */
+  shareFolderId?: string;
   folderName: string;
   /** Open this file in the viewer on load (links from "recent uploads"). */
   initialFileId?: string;
@@ -30,12 +36,36 @@ export function FileGrid({
   );
   const [renaming, setRenaming] = useState<FileItem | null>(null);
   const [deleting, setDeleting] = useState<FileItem | null>(null);
+  // Null when not picking files to share.
+  const [selected, setSelected] = useState<Set<string> | null>(null);
+  // "done" once the link exists: closing the dialog then ends the selection.
+  const [sharing, setSharing] = useState<"open" | "done" | null>(null);
 
   const videoCount = files.filter(isVideo).length;
   const counts = { all: files.length, image: files.length - videoCount, video: videoCount };
   const visible =
     filter === "all" ? files : files.filter((f) => (filter === "video") === isVideo(f));
   const previewIndex = previewId ? visible.findIndex((f) => f.id === previewId) : -1;
+
+  // Files that left the folder (trashed elsewhere) drop out of the selection.
+  const picked = selected ? files.filter((f) => selected.has(f.id)).map((f) => f.id) : [];
+  const allVisiblePicked = selected !== null && visible.every((f) => selected.has(f.id));
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    if (selected === null || sharing) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setSelected(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected, sharing]);
 
   const chips: { value: Filter; label: string }[] = [
     { value: "all", label: "Tất cả" },
@@ -69,6 +99,27 @@ export function FileGrid({
             </button>
           ))}
         </div>
+        {shareFolderId &&
+          (selected === null ? (
+            <Button variant="outline" size="lg" onClick={() => setSelected(new Set())}>
+              <ListChecksIcon data-icon="inline-start" />
+              Chọn
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="lg"
+              onClick={() =>
+                setSelected(
+                  allVisiblePicked
+                    ? new Set([...selected].filter((id) => !visible.some((f) => f.id === id)))
+                    : new Set([...selected, ...visible.map((f) => f.id)]),
+                )
+              }
+            >
+              {allVisiblePicked ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+            </Button>
+          ))}
       </div>
 
       {visible.length === 0 ? (
@@ -81,7 +132,8 @@ export function FileGrid({
             <FileCard
               key={f.id}
               file={f}
-              onOpen={() => setPreviewId(f.id)}
+              selected={selected ? selected.has(f.id) : undefined}
+              onOpen={() => (selected ? toggle(f.id) : setPreviewId(f.id))}
               onRename={canEdit ? () => setRenaming(f) : undefined}
               onDelete={canEdit ? () => setDeleting(f) : undefined}
             />
@@ -98,6 +150,37 @@ export function FileGrid({
         onDelete={canEdit ? (f) => setDeleting(f) : undefined}
       />
 
+      {selected && shareFolderId && (
+        <div
+          role="toolbar"
+          aria-label="File đã chọn"
+          className="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-2xl bg-popover py-2 pr-2 pl-4 shadow-[0_24px_60px_rgba(0,0,0,0.5)] ring-1 ring-[#2a2e37] sm:bottom-8"
+        >
+          <span className="pr-2 text-sm whitespace-nowrap">
+            <span className="font-mono font-semibold">{picked.length}</span> đã chọn
+          </span>
+          <Button size="lg" disabled={picked.length === 0} onClick={() => setSharing("open")}>
+            <Link2Icon data-icon="inline-start" />
+            Tạo link
+          </Button>
+          <Button variant="ghost" size="icon-lg" aria-label="Thoát chế độ chọn" onClick={() => setSelected(null)}>
+            <XIcon />
+          </Button>
+        </div>
+      )}
+      {sharing && shareFolderId && (
+        <ShareFilesDialog
+          open
+          folderId={shareFolderId}
+          fileIds={picked}
+          onCreated={() => setSharing("done")}
+          onOpenChange={(open) => {
+            if (open) return;
+            if (sharing === "done") setSelected(null);
+            setSharing(null);
+          }}
+        />
+      )}
       {renaming && (
         <NameDialog
           open

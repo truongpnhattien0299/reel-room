@@ -5,7 +5,7 @@ import { refresh } from "next/cache";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { db } from "@/db";
-import { files, folderPermissions, folders, user } from "@/db/schema";
+import { files, folderPermissions, folders, shareLinkFiles, shareLinks, user } from "@/db/schema";
 import { auth, isAdmin, requireSession } from "@/lib/auth";
 import {
   ForbiddenError,
@@ -16,8 +16,9 @@ import {
 } from "@/server/permissions";
 import { purgeFiles, purgeFolderTree } from "@/server/purge";
 import { listFolderMembers } from "@/server/queries";
+import { listShareLinks, newShareToken } from "@/server/share-links";
 
-export type ActionResult = { error?: string };
+export type ActionResult<T = void> = { error?: string; data?: T };
 
 const nameSchema = z
   .string()
@@ -27,11 +28,11 @@ const nameSchema = z
   .refine((s) => !s.includes("/"), "Tên không được chứa ký tự /");
 
 /** Turns expected failures into `{ error }` so forms can show them. */
-async function run(fn: () => Promise<void>): Promise<ActionResult> {
+async function run<T = void>(fn: () => Promise<T>): Promise<ActionResult<T>> {
   try {
-    await fn();
+    const data = await fn();
     refresh();
-    return {};
+    return data === undefined ? {} : { data };
   } catch (err) {
     if (err instanceof ForbiddenError || err instanceof NotFoundError) {
       return { error: err.message };
@@ -166,6 +167,89 @@ export async function revokeShare(folderId: string, userId: string) {
     await db
       .delete(folderPermissions)
       .where(and(eq(folderPermissions.folderId, folderId), eq(folderPermissions.userId, userId)));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Public share links
+// ---------------------------------------------------------------------------
+
+/** Custom expiry dates are capped; "never" is a separate, explicit choice. */
+const MAX_LINK_DAYS = 365;
+
+const shareLinkSchema = z.object({
+  folderId: z.uuid(),
+  /** Share just these files (all in `folderId`); omit to share the whole folder. */
+  fileIds: z.array(z.uuid()).min(1, "Chọn ít nhất một file").max(500, "Chọn tối đa 500 file").optional(),
+  expiresAt: z
+    .date()
+    .nullable()
+    .refine((d) => d === null || d.getTime() > Date.now(), "Thời điểm hết hạn phải ở tương lai")
+    .refine(
+      (d) => d === null || d.getTime() <= Date.now() + MAX_LINK_DAYS * 86_400_000,
+      `Thời hạn tối đa ${MAX_LINK_DAYS} ngày`,
+    ),
+});
+
+export async function createShareLink(input: z.input<typeof shareLinkSchema>) {
+  const session = await requireSession();
+  return run(async () => {
+    const { folderId, fileIds, expiresAt } = shareLinkSchema.parse(input);
+    await requireFolderRole(session, folderId, "editor");
+    const id = crypto.randomUUID();
+    const token = newShareToken();
+    const link = db.insert(shareLinks).values({
+      id,
+      token,
+      kind: fileIds ? "files" : "folder",
+      folderId,
+      expiresAt,
+      createdBy: session.user.id,
+    });
+    if (!fileIds) {
+      await link;
+      return { token };
+    }
+    const unique = [...new Set(fileIds)];
+    const found = await db
+      .select({ id: files.id })
+      .from(files)
+      .where(
+        and(
+          inArray(files.id, unique),
+          eq(files.folderId, folderId),
+          eq(files.status, "ready"),
+          isNull(files.deletedAt),
+        ),
+      );
+    if (found.length !== unique.length) throw new NotFoundError("Một số file không còn trong folder này");
+    await db.batch([
+      link,
+      db.insert(shareLinkFiles).values(unique.map((fileId) => ({ linkId: id, fileId }))),
+    ]);
+    return { token };
+  });
+}
+
+export async function getShareLinks(folderId: string) {
+  const session = await requireSession();
+  return listShareLinks(session, folderId);
+}
+
+/** The link's creator or a folder owner may revoke it. */
+export async function deleteShareLink(linkId: string) {
+  const session = await requireSession();
+  return run(async () => {
+    const [link] = await db
+      .select({ folderId: shareLinks.folderId, createdBy: shareLinks.createdBy })
+      .from(shareLinks)
+      .where(eq(shareLinks.id, z.uuid().parse(linkId)));
+    if (!link) throw new NotFoundError("Link không tồn tại");
+    const { role } = await requireFolderRole(session, link.folderId, "editor");
+    if (link.createdBy !== session.user.id && role !== "owner") {
+      throw new ForbiddenError("Chỉ người tạo link hoặc chủ sở hữu folder mới thu hồi được");
+    }
+    await db.delete(shareLinks).where(eq(shareLinks.id, linkId));
   });
 }
 

@@ -13,7 +13,8 @@ type GridFolder = { id: string; name: string; role: FolderRole } & FolderStats;
 
 const can = {
   rename: (role: FolderRole) => role !== "viewer",
-  share: (role: FolderRole) => role === "owner",
+  // Editors may hand out public links; only owners manage members.
+  share: (role: FolderRole) => role !== "viewer",
   // Top-level folders are shared spaces, so only owners may remove them.
   delete: (role: FolderRole, isRoot: boolean) => (isRoot ? role === "owner" : role !== "viewer"),
 };
@@ -68,6 +69,7 @@ export function FolderGrid({
           open
           onOpenChange={(open) => !open && setSharing(null)}
           folder={sharing}
+          role={sharing.role}
           currentUserId={currentUserId}
         />
       )}

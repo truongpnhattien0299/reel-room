@@ -195,6 +195,53 @@ export const folderPermissions = pgTable(
   ],
 );
 
+export const shareLinkKind = pgEnum("share_link_kind", ["folder", "files"]);
+
+/**
+ * A public link: anyone holding `token` may view, no sign-in needed. A
+ * "folder" link exposes the folder's whole subtree; a "files" link exposes
+ * only the files listed in `share_link_files`, which all live in `folderId`.
+ * Links stop working once expired, once the folder is trashed, or once the
+ * creator loses edit access to the folder.
+ */
+export const shareLinks = pgTable(
+  "share_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    token: text("token").notNull().unique(),
+    kind: shareLinkKind("kind").notNull(),
+    folderId: uuid("folder_id")
+      .notNull()
+      .references(() => folders.id, { onDelete: "cascade" }),
+    /** Null: never expires. */
+    expiresAt: timestamp("expires_at"),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("share_links_folder_idx").on(t.folderId),
+    index("share_links_expires_idx").on(t.expiresAt),
+  ],
+);
+
+export const shareLinkFiles = pgTable(
+  "share_link_files",
+  {
+    linkId: uuid("link_id")
+      .notNull()
+      .references(() => shareLinks.id, { onDelete: "cascade" }),
+    fileId: uuid("file_id")
+      .notNull()
+      .references(() => files.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.linkId, t.fileId] }),
+    index("share_link_files_file_idx").on(t.fileId),
+  ],
+);
+
 export const foldersRelations = relations(folders, ({ many }) => ({
   files: many(files),
   permissions: many(folderPermissions),
@@ -218,3 +265,4 @@ export const folderPermissionsRelations = relations(
 export type Folder = typeof folders.$inferSelect;
 export type FileRow = typeof files.$inferSelect;
 export type FolderRole = (typeof folderRole.enumValues)[number];
+export type ShareLink = typeof shareLinks.$inferSelect;

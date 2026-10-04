@@ -95,7 +95,7 @@ export async function getFolderView(session: Session, folderId: string) {
 
 export type FolderView = Awaited<ReturnType<typeof getFolderView>>;
 
-const fileColumns = {
+export const fileColumns = {
   id: files.id,
   name: files.name,
   mimeType: files.mimeType,
@@ -108,7 +108,7 @@ const fileColumns = {
   uploaderName: user.name,
 };
 
-function toFileItem({ thumbKey, ...f }: { thumbKey: string | null } & Omit<FileItem, "hasThumb">) {
+export function toFileItem({ thumbKey, ...f }: { thumbKey: string | null } & Omit<FileItem, "hasThumb">) {
   return { ...f, hasThumb: thumbKey !== null };
 }
 

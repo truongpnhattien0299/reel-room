@@ -62,7 +62,11 @@ export function FolderCard({ folder, ...actions }: { folder: CardFolder } & Fold
 }
 
 /** Compact row card for subfolders inside a folder. */
-export function SubfolderCard({ folder, ...actions }: { folder: CardFolder } & FolderCardActions) {
+export function SubfolderCard({
+  folder,
+  href = `/f/${folder.id}`,
+  ...actions
+}: { folder: CardFolder; href?: string } & FolderCardActions) {
   const cover = folder.previewIds[0];
   return (
     <ItemWithMenu
@@ -71,7 +75,7 @@ export function SubfolderCard({ folder, ...actions }: { folder: CardFolder } & F
       menuClassName="top-1/2 right-2.5 -translate-y-1/2"
     >
       <Link
-        href={`/f/${folder.id}`}
+        href={href}
         className="flex items-center gap-3 rounded-[14px] bg-card py-2.5 pr-12 pl-2.5 ring-1 ring-border transition-colors outline-none hover:bg-[#1a1d23] hover:ring-[#3a3f4a] focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className="size-11 shrink-0 overflow-hidden rounded-[10px]">
