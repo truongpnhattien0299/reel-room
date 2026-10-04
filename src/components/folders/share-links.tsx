@@ -210,7 +210,7 @@ export function FolderShareLinks({
                     aria-label="Sao chép link"
                     onClick={() => copy(linkUrl(l.token))}
                   >
-                    {copied === linkUrl(l.token) ? <CheckIcon /> : <CopyIcon />}
+                    {copied?.endsWith(shareLinkPath(l.token)) ? <CheckIcon /> : <CopyIcon />}
                   </Button>
                 )}
                 {canRevoke && (

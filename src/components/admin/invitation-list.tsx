@@ -42,7 +42,7 @@ export function InvitationList({ invitations }: { invitations: InvitationItem[] 
       <ul className="flex flex-col gap-1 rounded-[18px] bg-card p-1.5 ring-1 ring-border">
         {invitations.map((inv) => {
           const { expired, text } = expiryText(inv.expiresAt);
-          const url = absoluteUrlSafe(invitePath(inv.token));
+          const path = invitePath(inv.token);
           return (
             <li key={inv.id} className="flex items-center gap-3 rounded-xl px-2.5 py-2">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-background ring-1 ring-border">
@@ -65,9 +65,9 @@ export function InvitationList({ invitations }: { invitations: InvitationItem[] 
                   variant="ghost"
                   size="icon-sm"
                   aria-label={`Sao chép link mời ${inv.email}`}
-                  onClick={() => url && copy(url)}
+                  onClick={() => copy(absoluteUrl(path))}
                 >
-                  {copied === url ? <CheckIcon /> : <CopyIcon />}
+                  {copied?.endsWith(path) ? <CheckIcon /> : <CopyIcon />}
                 </Button>
               )}
               <Button
@@ -108,6 +108,3 @@ function expiryText(expiresAt: Date) {
   if (expiresAt.getTime() <= Date.now()) return { text: "Đã hết hạn", expired: true };
   return { text: `Hết hạn ${formatRelative(expiresAt)}`, expired: false };
 }
-
-/** The origin is only known in the browser; during SSR there's no link yet. */
-const absoluteUrlSafe = (path: string) => (typeof window === "undefined" ? null : absoluteUrl(path));
