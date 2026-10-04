@@ -67,14 +67,23 @@ pnpm create-admin you@company.com "Tên Bạn"
 pnpm dev
 ```
 
-Nếu chưa có `RESEND_API_KEY`, email mời và reset mật khẩu sẽ được **in ra console** của dev server. Link mời vẫn hiện trong dialog để gửi tay.
+Nếu chưa cấu hình email, email mời và reset mật khẩu sẽ được **in ra console** của dev server. Link mời vẫn hiện trong dialog để gửi tay.
 
-### Email (Resend)
+### Email: Resend hoặc SMTP
+Chọn một trong hai. `EMAIL_PROVIDER` (`resend` | `smtp`) không bắt buộc: mặc định dùng Resend nếu có `RESEND_API_KEY`, không thì SMTP nếu có `SMTP_HOST`.
+
+**Resend** (cần domain):
 1. Tạo tài khoản ở [resend.com](https://resend.com) → *Domains* → *Add Domain*, nên dùng subdomain riêng (vd. `mail.your-domain.com`).
 2. Thêm các bản ghi DNS Resend đưa ra (MX + TXT SPF cho `send.…`, TXT DKIM `resend._domainkey.…`, tuỳ chọn DMARC) ở nơi quản lý DNS, chờ trạng thái **Verified**.
 3. *API Keys* → *Create API Key*, quyền **Sending access**, giới hạn theo domain vừa thêm → điền `RESEND_API_KEY`.
 4. `EMAIL_FROM="ReelRoom <noreply@mail.your-domain.com>"`: địa chỉ phải thuộc domain đã verify.
-5. Chưa có domain: dùng tạm `onboarding@resend.dev`, nhưng chỉ gửi được tới email của chính tài khoản Resend.
+
+**SMTP** (không cần domain, vd. Gmail):
+1. Bật *Xác minh 2 bước* cho tài khoản Google → [App passwords](https://myaccount.google.com/apppasswords) → tạo mật khẩu ứng dụng 16 ký tự.
+2. `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`, `SMTP_USER=ban@gmail.com`, `SMTP_PASS=<app password>`.
+3. `EMAIL_FROM="ReelRoom <ban@gmail.com>"`: Gmail chỉ gửi bằng chính địa chỉ đó. Giới hạn khoảng 500 email/ngày.
+
+Dịch vụ SMTP khác (Brevo, Mailgun, SES…) điền host/port/user/pass của dịch vụ đó; port 587 dùng STARTTLS.
 
 ### 4. Deploy lên Vercel
 - Import repo và set toàn bộ env trong `.env.example`. `BETTER_AUTH_URL` là domain production.
