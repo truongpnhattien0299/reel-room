@@ -107,7 +107,7 @@ export function ShareDialog({
                 aria-selected={tab === value}
                 onClick={() => setTab(value)}
                 className={cn(
-                  "h-8 flex-1 rounded-[9px] text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "h-8 flex-1 rounded-[calc(var(--radius-xl)-0.25rem)] text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   tab === value
                     ? "bg-[#2a2e37] font-medium text-foreground"
                     : "text-muted-foreground hover:text-foreground",

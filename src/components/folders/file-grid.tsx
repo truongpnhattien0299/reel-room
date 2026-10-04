@@ -88,7 +88,7 @@ export function FileGrid({
               aria-pressed={filter === c.value}
               onClick={() => setFilter(c.value)}
               className={cn(
-                "flex h-9 items-center gap-1.5 rounded-[9px] px-3.5 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "flex h-9 items-center gap-1.5 rounded-[calc(var(--radius-xl)-0.25rem)] px-3.5 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 filter === c.value
                   ? "bg-[#2a2e37] font-medium text-foreground"
                   : "text-muted-foreground hover:text-foreground",
