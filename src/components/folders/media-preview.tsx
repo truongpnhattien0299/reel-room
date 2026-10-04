@@ -20,11 +20,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatBytes, formatDateTime, formatDuration } from "@/lib/format";
-import { contentUrl, downloadUrl, isVideo } from "@/lib/media";
+import { isVideo } from "@/lib/media";
 import { toneFor } from "@/lib/tones";
 import { cn } from "@/lib/utils";
 import type { FileItem } from "@/server/queries";
 import { MediaThumb } from "./media-thumb";
+import { useMediaUrls } from "./media-urls";
 
 const initials = (name: string) =>
   name
@@ -53,6 +54,7 @@ export function MediaPreview({
   const hasPrev = index !== null && index > 0;
   const hasNext = index !== null && index < files.length - 1;
   const stripRef = useRef<HTMLElement>(null);
+  const urls = useMediaUrls();
 
   useEffect(() => {
     if (index === null) return;
@@ -98,7 +100,7 @@ export function MediaPreview({
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button size="xl" nativeButton={false} render={<a href={downloadUrl(file.id)} />}>
+                <Button size="xl" nativeButton={false} render={<a href={urls.download(file.id)} />}>
                   <DownloadIcon data-icon="inline-start" />
                   Tải về
                 </Button>
@@ -137,7 +139,7 @@ export function MediaPreview({
                   {isVideo(file) ? (
                     <video
                       key={file.id}
-                      src={contentUrl(file.id)}
+                      src={urls.content(file.id)}
                       controls
                       autoPlay
                       playsInline
@@ -147,7 +149,7 @@ export function MediaPreview({
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       key={file.id}
-                      src={contentUrl(file.id)}
+                      src={urls.content(file.id)}
                       alt={file.name}
                       className="max-h-full max-w-full rounded-2xl object-contain shadow-[0_30px_80px_rgba(0,0,0,0.6)]"
                     />
@@ -227,20 +229,23 @@ export function MediaPreview({
                   <InfoRow label="Tải lên">{formatDateTime(file.createdAt)}</InfoRow>
                 </dl>
                 <div className="h-px bg-[#1f2229]" />
-                <div className="flex flex-col gap-3">
-                  <span className="text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-                    Người tải lên
-                  </span>
-                  <div className="flex items-center gap-3">
-                    <span
-                      className="flex size-9 items-center justify-center rounded-full text-xs font-semibold"
-                      style={{ background: toneFor(file.uploaderName).sky }}
-                    >
-                      {initials(file.uploaderName)}
+                {/* Public links leave the uploader out. */}
+                {file.uploaderName && (
+                  <div className="flex flex-col gap-3">
+                    <span className="text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+                      Người tải lên
                     </span>
-                    <span className="font-medium">{file.uploaderName}</span>
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="flex size-9 items-center justify-center rounded-full text-xs font-semibold"
+                        style={{ background: toneFor(file.uploaderName).sky }}
+                      >
+                        {initials(file.uploaderName)}
+                      </span>
+                      <span className="font-medium">{file.uploaderName}</span>
+                    </div>
                   </div>
-                </div>
+                )}
                 <div className="flex flex-col gap-3">
                   <span className="text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
                     Vị trí

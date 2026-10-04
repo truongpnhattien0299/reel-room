@@ -91,8 +91,8 @@ export default async function FolderPage(props: PageProps<"/f/[folderId]">) {
           }
           actions={
             <>
-              {view.role === "owner" && (
-                <ShareButton folder={view.folder} currentUserId={session.user.id} />
+              {canEdit && (
+                <ShareButton folder={view.folder} role={view.role} currentUserId={session.user.id} />
               )}
               {canEdit && <NewFolderButton parentId={view.folder.id} />}
               {canEdit && <UploadButton folderId={view.folder.id} />}
@@ -115,6 +115,7 @@ export default async function FolderPage(props: PageProps<"/f/[folderId]">) {
             <FileGrid
               files={view.files}
               canEdit={canEdit}
+              shareFolderId={canEdit ? view.folder.id : undefined}
               folderName={view.folder.name}
               initialFileId={typeof file === "string" ? file : undefined}
             />

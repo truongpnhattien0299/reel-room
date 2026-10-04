@@ -22,7 +22,14 @@ File không bao giờ đi qua server Next.js, nên không vướng giới hạn 
 - `admin` (role của Better Auth): toàn quyền, quản lý user ở `/admin/users`.
 - Quyền theo folder: `viewer` < `editor` < `owner`. Cấp ở một folder thì áp dụng cho toàn bộ cây con. Quyền thực tế là quyền **cao nhất** được cấp ở folder đó hoặc ở bất kỳ folder cha nào.
 - Ai cũng tạo được folder gốc và trở thành `owner` của nó.
-- `editor`: upload, tạo folder con, đổi tên, xoá. `owner`: thêm quyền chia sẻ, và xoá được folder gốc.
+- `editor`: upload, tạo folder con, đổi tên, xoá, tạo link chia sẻ. `owner`: thêm quyền chia sẻ, và xoá được folder gốc.
+
+## Link chia sẻ công khai
+
+- Ai có link `/s/<token>` đều xem và tải được, không cần đăng nhập. Link trỏ tới **cả folder** (gồm cây con) hoặc **các file đã chọn** trong một folder.
+- Thời hạn: 1/7/30 ngày, ngày tuỳ chọn (tối đa 365 ngày) hoặc không hết hạn.
+- Link ngừng hoạt động khi hết hạn, bị thu hồi (người tạo hoặc owner), folder vào thùng rác, hoặc người tạo mất quyền `editor` trên folder.
+- File được phục vụ qua `/api/s/<token>/files/<id>/{content,thumb}` (cùng cơ chế redirect 302 tới URL ký sẵn). Cron dọn link đã hết hạn quá 30 ngày.
 - Xoá là xoá mềm (`deleted_at`), chưa có UI thùng rác.
 
 ## Setup

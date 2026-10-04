@@ -3,9 +3,9 @@
 import { PlayIcon } from "lucide-react";
 import { useState } from "react";
 import { formatDuration } from "@/lib/format";
-import { thumbUrl } from "@/lib/media";
 import { toneFor } from "@/lib/tones";
 import { cn } from "@/lib/utils";
+import { useMediaUrls } from "./media-urls";
 
 /**
  * A file's thumbnail, or a muted "contact sheet" tile when there is none
@@ -23,12 +23,13 @@ export function MediaThumb({
   imgClassName?: string;
 }) {
   const [failed, setFailed] = useState(false);
+  const urls = useMediaUrls();
   if (hasThumb && !failed) {
     return (
       // Plain <img>: the source redirects to a signed R2 URL, nothing to optimize.
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={thumbUrl(id)}
+        src={urls.thumb(id)}
         alt=""
         loading="lazy"
         decoding="async"
