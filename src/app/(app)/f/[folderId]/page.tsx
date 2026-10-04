@@ -23,7 +23,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { FolderDropzone, UploadButton } from "@/components/upload/folder-dropzone";
+import { FolderDropzone, UploadArea, UploadButton } from "@/components/upload/folder-dropzone";
 import { requireSession } from "@/lib/auth";
 import { formatBytes } from "@/lib/format";
 import { NotFoundError, roleAtLeast } from "@/server/permissions";
@@ -122,22 +122,29 @@ export default async function FolderPage(props: PageProps<"/f/[folderId]">) {
           </section>
         )}
 
-        {isEmpty && (
-          <Empty className="rounded-[18px] border border-dashed border-border py-16">
-            <EmptyHeader>
-              <EmptyMedia variant="icon" className="size-12 rounded-xl bg-card [&_svg]:size-6">
-                <ImagesIcon />
-              </EmptyMedia>
-              <EmptyTitle className="font-display text-xl">Folder trống</EmptyTitle>
-              <EmptyDescription>
-                {canEdit
-                  ? "Kéo thả ảnh, video vào đây hoặc bấm Upload."
-                  : "Chưa có nội dung nào trong folder này."}
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        )}
+        {isEmpty &&
+          (canEdit ? (
+            <UploadArea folderId={view.folder.id}>
+              <EmptyFolder description="Kéo thả ảnh, video vào đây hoặc bấm để chọn file." />
+            </UploadArea>
+          ) : (
+            <EmptyFolder description="Chưa có nội dung nào trong folder này." />
+          ))}
       </PageShell>
     </FolderDropzone>
+  );
+}
+
+function EmptyFolder({ description }: { description: string }) {
+  return (
+    <Empty className="rounded-[18px] border border-dashed border-border py-16">
+      <EmptyHeader>
+        <EmptyMedia variant="icon" className="size-12 rounded-xl bg-card [&_svg]:size-6">
+          <ImagesIcon />
+        </EmptyMedia>
+        <EmptyTitle className="font-display text-xl">Folder trống</EmptyTitle>
+        <EmptyDescription>{description}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 }
