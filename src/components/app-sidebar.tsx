@@ -1,16 +1,11 @@
 "use client";
 
-import {
-  ChevronsUpDownIcon,
-  FilmIcon,
-  FolderIcon,
-  HomeIcon,
-  LogOutIcon,
-  UsersIcon,
-} from "lucide-react";
+import { ChevronsUpDownIcon, ImageIcon, LogOutIcon, PlusIcon, ShieldIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useState } from "react";
+import { ReelMark, Wordmark } from "@/components/brand/reel-mark";
+import { NameDialog } from "@/components/folders/name-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,15 +17,17 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
+  SidebarGroupAction,
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarRail,
 } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
+import { toneFor } from "@/lib/tones";
+import { createFolder } from "@/server/actions";
 import type { FolderSummary } from "@/server/queries";
 
 const initials = (name: string) =>
@@ -40,6 +37,9 @@ const initials = (name: string) =>
     .slice(-2)
     .map((w) => w[0]!.toUpperCase())
     .join("");
+
+const itemClass =
+  "h-10 gap-3 rounded-[10px] px-3 text-[14px] text-sidebar-foreground data-active:font-medium [&_svg]:size-[18px]";
 
 export function AppSidebar({
   rootFolders,
@@ -52,44 +52,41 @@ export function AppSidebar({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [creating, setCreating] = useState(false);
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" render={<Link href="/" />}>
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <FilmIcon className="size-4" />
-              </div>
-              <span className="font-semibold">ReelRoom</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+    <Sidebar>
+      <SidebarHeader className="px-4 pt-5 pb-2">
+        <Link href="/" className="flex items-center gap-2.5 rounded-lg px-2 py-1 outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <ReelMark />
+          <Wordmark />
+        </Link>
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarContent className="gap-4 px-2">
         <SidebarGroup>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-0.5">
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={pathname === "/"}
-                  tooltip="Tất cả folder"
+                  className={itemClass}
                   render={<Link href="/" />}
                 >
-                  <HomeIcon />
-                  <span>Tất cả folder</span>
+                  <ImageIcon className={pathname === "/" ? "text-primary" : undefined} />
+                  <span>Thư viện</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               {isAdmin && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={pathname.startsWith("/admin")}
-                    tooltip="Quản lý user"
+                    className={itemClass}
                     render={<Link href="/admin/users" />}
                   >
-                    <UsersIcon />
+                    <ShieldIcon
+                      className={pathname.startsWith("/admin") ? "text-primary" : undefined}
+                    />
                     <span>Quản lý user</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -98,60 +95,91 @@ export function AppSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {rootFolders.length > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Folder</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {rootFolders.map((f) => (
-                  <SidebarMenuItem key={f.id}>
-                    <SidebarMenuButton
-                      isActive={pathname === `/f/${f.id}`}
-                      tooltip={f.name}
-                      render={<Link href={`/f/${f.id}`} />}
-                    >
-                      <FolderIcon />
-                      <span>{f.name}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+        <SidebarGroup>
+          <SidebarGroupLabel className="px-3 text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+            Folder
+          </SidebarGroupLabel>
+          <SidebarGroupAction
+            aria-label="Tạo folder"
+            className="top-2.5 right-3 size-7 rounded-lg [&>svg]:size-4"
+            onClick={() => setCreating(true)}
+          >
+            <PlusIcon />
+          </SidebarGroupAction>
+          <SidebarGroupContent>
+            <SidebarMenu className="gap-0.5">
+              {rootFolders.length === 0 && (
+                <li className="px-3 py-1.5 text-[13px] text-muted-foreground">Chưa có folder nào</li>
+              )}
+              {rootFolders.map((f) => (
+                <SidebarMenuItem key={f.id}>
+                  <SidebarMenuButton
+                    isActive={pathname === `/f/${f.id}`}
+                    className={`${itemClass} h-9`}
+                    render={<Link href={`/f/${f.id}`} />}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="size-2.5 shrink-0 rounded-[3px]"
+                      style={{ background: toneFor(f.id).sky }}
+                    />
+                    <span className="truncate">{f.name}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <DropdownMenu>
-              <DropdownMenuTrigger render={<SidebarMenuButton size="lg" />}>
-                <Avatar className="size-8 rounded-lg">
-                  <AvatarFallback className="rounded-lg">{initials(user.name)}</AvatarFallback>
-                </Avatar>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{user.name}</span>
-                  <span className="truncate text-xs text-muted-foreground">{user.email}</span>
-                </div>
-                <ChevronsUpDownIcon className="ml-auto size-4" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent side="top" align="start" className="min-w-56">
-                <DropdownMenuItem
-                  onClick={async () => {
-                    await authClient.signOut();
-                    router.replace("/login");
-                    router.refresh();
-                  }}
-                >
-                  <LogOutIcon />
-                  Đăng xuất
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </SidebarMenuItem>
-        </SidebarMenu>
+      <SidebarFooter className="p-4">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <button
+                type="button"
+                className="flex w-full items-center gap-3 rounded-xl bg-card px-3 py-2.5 text-left ring-1 ring-sidebar-border transition-colors outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            }
+          >
+            <span
+              className="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+              style={{ background: toneFor(user.email).sky }}
+            >
+              {initials(user.name)}
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col leading-tight">
+              <span className="truncate font-medium">{user.name}</span>
+              <span className="truncate text-xs text-muted-foreground">
+                {isAdmin ? "Admin" : user.email}
+              </span>
+            </span>
+            <ChevronsUpDownIcon className="size-4 text-muted-foreground" aria-hidden="true" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="start" className="min-w-56">
+            <DropdownMenuItem
+              onClick={async () => {
+                await authClient.signOut();
+                router.replace("/login");
+                router.refresh();
+              }}
+            >
+              <LogOutIcon />
+              Đăng xuất
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </SidebarFooter>
-      <SidebarRail />
+
+      {creating && (
+        <NameDialog
+          open
+          onOpenChange={setCreating}
+          title="Tạo folder mới"
+          submitLabel="Tạo"
+          onSubmit={(name) => createFolder(null, name)}
+        />
+      )}
     </Sidebar>
   );
 }

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { AuthShell } from "@/components/auth/auth-shell";
 import { LoginForm } from "@/components/auth/login-form";
 import { getSession } from "@/lib/auth";
 
@@ -11,8 +12,8 @@ export default async function LoginPage(props: PageProps<"/login">) {
   const target = typeof next === "string" && next.startsWith("/") && !next.startsWith("//") ? next : "/";
   if (await getSession()) redirect(target);
   return (
-    <main className="flex min-h-svh items-center justify-center p-4">
+    <AuthShell>
       <LoginForm redirectTo={target} />
-    </main>
+    </AuthShell>
   );
 }

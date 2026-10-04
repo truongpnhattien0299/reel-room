@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { InviteUserButton } from "@/components/admin/invite-user-button";
 import { ResendInviteButton } from "@/components/admin/resend-invite-button";
-import { PageHeader } from "@/components/page-header";
+import { PageHeader, PageShell } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -24,12 +24,14 @@ export default async function UsersPage() {
   const users = await listUsers();
 
   return (
-    <>
-      <PageHeader actions={<InviteUserButton />}>
-        <h1 className="font-semibold">Quản lý user</h1>
-      </PageHeader>
-      <div className="p-4">
-        <div className="rounded-xl ring-1 ring-foreground/10">
+    <PageShell>
+      <PageHeader
+        title="Quản lý user"
+        description="Mời đồng nghiệp và theo dõi ai đã kích hoạt tài khoản."
+        actions={<InviteUserButton />}
+      />
+      <div>
+        <div className="overflow-x-auto rounded-[18px] bg-card ring-1 ring-border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -64,6 +66,6 @@ export default async function UsersPage() {
           </Table>
         </div>
       </div>
-    </>
+    </PageShell>
   );
 }

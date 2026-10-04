@@ -51,10 +51,10 @@ export function FolderDropzone({
     >
       {children}
       {dragging && (
-        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/5">
+        <div className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center rounded-3xl border-2 border-dashed border-primary bg-stage/75 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-2 text-primary">
             <UploadIcon className="size-8" />
-            <p className="font-medium">Thả file để upload vào folder này</p>
+            <p className="font-display text-xl font-semibold">Thả file để upload vào folder này</p>
           </div>
         </div>
       )}
@@ -67,7 +67,7 @@ export function UploadButton({ folderId }: { folderId: string }) {
   const input = useRef<HTMLInputElement>(null);
   return (
     <>
-      <Button onClick={() => input.current?.click()}>
+      <Button size="xl" className="font-semibold" onClick={() => input.current?.click()}>
         <UploadIcon data-icon="inline-start" />
         Upload
       </Button>

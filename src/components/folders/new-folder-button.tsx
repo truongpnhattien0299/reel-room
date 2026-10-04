@@ -16,7 +16,7 @@ export function NewFolderButton({
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant={variant} onClick={() => setOpen(true)}>
+      <Button variant={variant} size="xl" onClick={() => setOpen(true)}>
         <FolderPlusIcon data-icon="inline-start" />
         Folder mới
       </Button>

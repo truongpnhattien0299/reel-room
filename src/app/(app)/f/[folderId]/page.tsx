@@ -7,7 +7,7 @@ import { FileGrid } from "@/components/folders/file-grid";
 import { FolderGrid } from "@/components/folders/folder-grid";
 import { NewFolderButton } from "@/components/folders/new-folder-button";
 import { ShareButton } from "@/components/folders/share-button";
-import { PageHeader } from "@/components/page-header";
+import { PageHeader, PageShell } from "@/components/page-header";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/empty";
 import { FolderDropzone, UploadButton } from "@/components/upload/folder-dropzone";
 import { requireSession } from "@/lib/auth";
+import { formatBytes } from "@/lib/format";
 import { NotFoundError, roleAtLeast } from "@/server/permissions";
 import { getFolderView } from "@/server/queries";
 
@@ -50,48 +51,57 @@ export async function generateMetadata(props: PageProps<"/f/[folderId]">): Promi
 
 export default async function FolderPage(props: PageProps<"/f/[folderId]">) {
   const { folderId } = await props.params;
+  const { file } = await props.searchParams;
   const { session, view } = await loadFolder(folderId);
   const canEdit = roleAtLeast(view.role, "editor");
   const isEmpty = view.subfolders.length === 0 && view.files.length === 0;
+  const totalSize = view.files.reduce((sum, f) => sum + f.size, 0);
 
   return (
     <FolderDropzone folderId={view.folder.id} enabled={canEdit}>
-      <PageHeader
-        actions={
-          <>
-            {view.role === "owner" && (
-              <ShareButton folder={view.folder} currentUserId={session.user.id} />
-            )}
-            {canEdit && <NewFolderButton parentId={view.folder.id} />}
-            {canEdit && <UploadButton folderId={view.folder.id} />}
-          </>
-        }
-      >
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink render={<Link href="/" />}>Tất cả</BreadcrumbLink>
-            </BreadcrumbItem>
-            {view.breadcrumbs.map((b) => (
-              <Fragment key={b.id}>
+      <PageShell>
+        <PageHeader
+          breadcrumb={
+            <Breadcrumb>
+              <BreadcrumbList className="text-[13px]">
+                <BreadcrumbItem>
+                  <BreadcrumbLink render={<Link href="/" />}>Thư viện</BreadcrumbLink>
+                </BreadcrumbItem>
+                {view.breadcrumbs.map((b) => (
+                  <Fragment key={b.id}>
+                    <BreadcrumbSeparator />
+                    <BreadcrumbItem>
+                      <BreadcrumbLink render={<Link href={`/f/${b.id}`} />}>{b.name}</BreadcrumbLink>
+                    </BreadcrumbItem>
+                  </Fragment>
+                ))}
                 <BreadcrumbSeparator />
                 <BreadcrumbItem>
-                  <BreadcrumbLink render={<Link href={`/f/${b.id}`} />}>{b.name}</BreadcrumbLink>
+                  <BreadcrumbPage>{view.folder.name}</BreadcrumbPage>
                 </BreadcrumbItem>
-              </Fragment>
-            ))}
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage className="font-semibold">{view.folder.name}</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-      </PageHeader>
+              </BreadcrumbList>
+            </Breadcrumb>
+          }
+          title={view.folder.name}
+          description={
+            <span className="font-mono text-xs">
+              {view.files.length} file · {formatBytes(totalSize)}
+              {view.subfolders.length > 0 && ` · ${view.subfolders.length} folder con`}
+            </span>
+          }
+          actions={
+            <>
+              {view.role === "owner" && (
+                <ShareButton folder={view.folder} currentUserId={session.user.id} />
+              )}
+              {canEdit && <NewFolderButton parentId={view.folder.id} />}
+              {canEdit && <UploadButton folderId={view.folder.id} />}
+            </>
+          }
+        />
 
-      <div className="space-y-6 p-4">
         {view.subfolders.length > 0 && (
-          <section className="space-y-2">
-            <h2 className="text-sm font-medium text-muted-foreground">Folder</h2>
+          <section aria-label="Folder con">
             <FolderGrid
               folders={view.subfolders.map((f) => ({ ...f, role: view.role }))}
               isRoot={false}
@@ -99,21 +109,25 @@ export default async function FolderPage(props: PageProps<"/f/[folderId]">) {
             />
           </section>
         )}
+
         {view.files.length > 0 && (
-          <section className="space-y-2">
-            <h2 className="text-sm font-medium text-muted-foreground">
-              Ảnh &amp; video ({view.files.length})
-            </h2>
-            <FileGrid files={view.files} canEdit={canEdit} />
+          <section aria-label="Ảnh và video" className="flex flex-col gap-5">
+            <FileGrid
+              files={view.files}
+              canEdit={canEdit}
+              folderName={view.folder.name}
+              initialFileId={typeof file === "string" ? file : undefined}
+            />
           </section>
         )}
+
         {isEmpty && (
-          <Empty className="border">
+          <Empty className="rounded-[18px] border border-dashed border-border py-16">
             <EmptyHeader>
-              <EmptyMedia variant="icon">
+              <EmptyMedia variant="icon" className="size-12 rounded-xl bg-card [&_svg]:size-6">
                 <ImagesIcon />
               </EmptyMedia>
-              <EmptyTitle>Folder trống</EmptyTitle>
+              <EmptyTitle className="font-display text-xl">Folder trống</EmptyTitle>
               <EmptyDescription>
                 {canEdit
                   ? "Kéo thả ảnh, video vào đây hoặc bấm Upload."
@@ -122,7 +136,7 @@ export default async function FolderPage(props: PageProps<"/f/[folderId]">) {
             </EmptyHeader>
           </Empty>
         )}
-      </div>
+      </PageShell>
     </FolderDropzone>
   );
 }

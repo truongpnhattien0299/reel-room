@@ -3,12 +3,13 @@
 import { useState } from "react";
 import type { FolderRole } from "@/db/schema";
 import { renameFolder, trashFolder } from "@/server/actions";
+import type { FolderStats } from "@/server/queries";
 import { ConfirmDialog } from "./confirm-dialog";
-import { FolderCard } from "./folder-card";
+import { FolderCard, SubfolderCard } from "./folder-card";
 import { NameDialog } from "./name-dialog";
 import { ShareDialog } from "./share-dialog";
 
-type GridFolder = { id: string; name: string; role: FolderRole };
+type GridFolder = { id: string; name: string; role: FolderRole } & FolderStats;
 
 const can = {
   rename: (role: FolderRole) => role !== "viewer",
@@ -29,12 +30,20 @@ export function FolderGrid({
   const [renaming, setRenaming] = useState<GridFolder | null>(null);
   const [sharing, setSharing] = useState<GridFolder | null>(null);
   const [deleting, setDeleting] = useState<GridFolder | null>(null);
+  // Library roots get cover cards; subfolders inside a folder get compact rows.
+  const Card = isRoot ? FolderCard : SubfolderCard;
 
   return (
     <>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3">
+      <div
+        className={
+          isRoot
+            ? "grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-5"
+            : "grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3"
+        }
+      >
         {folders.map((f) => (
-          <FolderCard
+          <Card
             key={f.id}
             folder={f}
             onRename={can.rename(f.role) ? () => setRenaming(f) : undefined}

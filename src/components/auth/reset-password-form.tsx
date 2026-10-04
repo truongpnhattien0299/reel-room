@@ -4,10 +4,10 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { authClient } from "@/lib/auth-client";
+import { AuthHeading } from "./auth-shell";
 
 export function ResetPasswordForm({ token }: { token: string }) {
   const router = useRouter();
@@ -35,44 +35,41 @@ export function ResetPasswordForm({ token }: { token: string }) {
   }
 
   return (
-    <Card className="w-full max-w-sm">
-      <CardHeader>
-        <CardTitle>Đặt mật khẩu</CardTitle>
-        <CardDescription>Chọn mật khẩu cho tài khoản ReelRoom của bạn</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={onSubmit}>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="password">Mật khẩu mới</FieldLabel>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                minLength={8}
-                required
-              />
-              <FieldDescription>Tối thiểu 8 ký tự</FieldDescription>
-            </Field>
-            <Field data-invalid={error ? true : undefined}>
-              <FieldLabel htmlFor="confirm">Nhập lại mật khẩu</FieldLabel>
-              <Input
-                id="confirm"
-                name="confirm"
-                type="password"
-                autoComplete="new-password"
-                minLength={8}
-                required
-              />
-              {error && <FieldError>{error}</FieldError>}
-            </Field>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Đang lưu…" : "Đặt mật khẩu"}
-            </Button>
-          </FieldGroup>
-        </form>
-      </CardContent>
-    </Card>
+    <>
+      <AuthHeading title="Đặt mật khẩu" description="Chọn mật khẩu cho tài khoản ReelRoom của bạn." />
+      <form onSubmit={onSubmit}>
+        <FieldGroup className="gap-5">
+          <Field>
+            <FieldLabel htmlFor="password">Mật khẩu mới</FieldLabel>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              className="h-12 rounded-xl px-3.5 text-[15px]"
+              required
+            />
+            <FieldDescription>Tối thiểu 8 ký tự</FieldDescription>
+          </Field>
+          <Field data-invalid={error ? true : undefined}>
+            <FieldLabel htmlFor="confirm">Nhập lại mật khẩu</FieldLabel>
+            <Input
+              id="confirm"
+              name="confirm"
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              className="h-12 rounded-xl px-3.5 text-[15px]"
+              required
+            />
+            {error && <FieldError>{error}</FieldError>}
+          </Field>
+          <Button type="submit" size="xl" className="mt-1 h-12 text-[15px] font-semibold" disabled={pending}>
+            {pending ? "Đang lưu…" : "Đặt mật khẩu"}
+          </Button>
+        </FieldGroup>
+      </form>
+    </>
   );
 }

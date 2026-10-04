@@ -27,7 +27,7 @@ export function InviteUserButton() {
 
   return (
     <>
-      <Button onClick={() => setOpen(true)}>
+      <Button size="xl" className="font-semibold" onClick={() => setOpen(true)}>
         <UserPlusIcon data-icon="inline-start" />
         Mời user
       </Button>

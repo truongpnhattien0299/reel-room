@@ -15,7 +15,7 @@ export function ShareButton({
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant="outline" onClick={() => setOpen(true)}>
+      <Button variant="outline" size="xl" onClick={() => setOpen(true)}>
         <UsersIcon data-icon="inline-start" />
         Chia sẻ
       </Button>

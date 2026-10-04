@@ -2,6 +2,7 @@
 
 import { MoreHorizontalIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -30,10 +31,13 @@ export function ItemWithMenu({
   actions,
   children,
   className,
+  menuClassName,
 }: {
   actions: MenuAction[];
   children: React.ReactNode;
   className?: string;
+  /** Overrides where the "…" button sits (top-right by default). */
+  menuClassName?: string;
 }) {
   if (actions.length === 0) return <div className={className}>{children}</div>;
   return (
@@ -44,10 +48,10 @@ export function ItemWithMenu({
           <DropdownMenuTrigger
             render={
               <Button
-                variant="secondary"
-                size="icon-sm"
+                variant="ghost"
+                size="icon"
                 aria-label="Thao tác"
-                className="absolute top-2 right-2 opacity-0 shadow-sm group-hover/item:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100 pointer-coarse:opacity-100"
+                className={cn("absolute top-2 right-2 rounded-[9px] bg-stage/75 text-foreground opacity-0 backdrop-blur-sm group-hover/item:opacity-100 hover:bg-stage/90 focus-visible:opacity-100 aria-expanded:bg-stage/90 aria-expanded:opacity-100 pointer-coarse:opacity-100", menuClassName)}
               />
             }
           >

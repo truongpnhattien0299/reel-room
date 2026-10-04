@@ -3,10 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { authClient } from "@/lib/auth-client";
+import { AuthHeading } from "./auth-shell";
 
 export function LoginForm({ redirectTo }: { redirectTo: string }) {
   const router = useRouter();
@@ -32,35 +32,42 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
   }
 
   return (
-    <Card className="w-full max-w-sm">
-      <CardHeader>
-        <CardTitle>ReelRoom</CardTitle>
-        <CardDescription>Đăng nhập bằng tài khoản công ty</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={onSubmit}>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="email">Email</FieldLabel>
-              <Input id="email" name="email" type="email" autoComplete="email" required />
-            </Field>
-            <Field data-invalid={error ? true : undefined}>
-              <FieldLabel htmlFor="password">Mật khẩu</FieldLabel>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-              />
-              {error && <FieldError>{error}</FieldError>}
-            </Field>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Đang đăng nhập…" : "Đăng nhập"}
-            </Button>
-          </FieldGroup>
-        </form>
-      </CardContent>
-    </Card>
+    <>
+      <AuthHeading title="Đăng nhập" description="Dùng tài khoản công ty do admin cấp." />
+      <form onSubmit={onSubmit}>
+        <FieldGroup className="gap-5">
+          <Field>
+            <FieldLabel htmlFor="email">Email</FieldLabel>
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              placeholder="ten@congty.com"
+              className="h-12 rounded-xl px-3.5 text-[15px]"
+              required
+            />
+          </Field>
+          <Field data-invalid={error ? true : undefined}>
+            <FieldLabel htmlFor="password">Mật khẩu</FieldLabel>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              className="h-12 rounded-xl px-3.5 text-[15px]"
+              required
+            />
+            {error && <FieldError>{error}</FieldError>}
+          </Field>
+          <Button type="submit" size="xl" className="mt-1 h-12 text-[15px] font-semibold" disabled={pending}>
+            {pending ? "Đang đăng nhập…" : "Đăng nhập"}
+          </Button>
+        </FieldGroup>
+      </form>
+      <p className="border-t border-[#1f2229] pt-5 text-[13px] text-muted-foreground">
+        Chưa có tài khoản, hoặc quên mật khẩu? Nhờ quản trị viên gửi lời mời qua email.
+      </p>
+    </>
   );
 }

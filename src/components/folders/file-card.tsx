@@ -1,14 +1,13 @@
 "use client";
 
-import { DownloadIcon, ImageIcon, PencilIcon, PlayIcon, Trash2Icon, VideoIcon } from "lucide-react";
-import { useState } from "react";
+import { DownloadIcon, PencilIcon, Trash2Icon } from "lucide-react";
 import { formatBytes } from "@/lib/format";
+import { downloadUrl, isVideo } from "@/lib/media";
 import type { FileItem } from "@/server/queries";
 import { ItemWithMenu, type MenuAction } from "./item-menu";
+import { DurationBadge, MediaThumb } from "./media-thumb";
 
-export const contentUrl = (id: string) => `/api/files/${id}/content`;
-export const downloadUrl = (id: string) => `/api/files/${id}/content?download=1`;
-
+/** Masonry tile: keeps the media's own aspect ratio when we know it. */
 export function FileCard({
   file,
   onOpen,
@@ -20,9 +19,6 @@ export function FileCard({
   onRename?: () => void;
   onDelete?: () => void;
 }) {
-  const [thumbFailed, setThumbFailed] = useState(false);
-  const isVideo = file.mimeType.startsWith("video/");
-
   const actions: MenuAction[] = [
     { label: "Tải về", icon: DownloadIcon, onClick: () => window.location.assign(downloadUrl(file.id)) },
   ];
@@ -31,42 +27,31 @@ export function FileCard({
     actions.push({ label: "Xoá", icon: Trash2Icon, onClick: onDelete, destructive: true });
   }
 
-  const FallbackIcon = isVideo ? VideoIcon : ImageIcon;
+  const ratio = file.width && file.height ? `${file.width} / ${file.height}` : "1 / 1";
 
   return (
-    <ItemWithMenu actions={actions} className="group/item relative">
+    <ItemWithMenu actions={actions} className="group/item relative mb-3.5 break-inside-avoid">
       <button
         type="button"
         onClick={onOpen}
-        className="block w-full overflow-hidden rounded-xl bg-card text-left ring-1 ring-foreground/10 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={`Xem ${file.name}`}
+        className="block w-full text-left outline-none focus-visible:[&>span:first-child]:ring-2 focus-visible:[&>span:first-child]:ring-ring"
       >
-        <div className="relative flex aspect-square items-center justify-center bg-muted">
-          {file.hasThumb && !thumbFailed ? (
-            // Plain <img>: the source is a redirect to a signed R2 URL, nothing to optimize.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={`/api/files/${file.id}/thumb`}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              onError={() => setThumbFailed(true)}
-              className="size-full object-cover transition-transform group-hover/item:scale-[1.02]"
-            />
-          ) : (
-            <FallbackIcon className="size-10 text-muted-foreground" />
+        <span
+          className="relative block max-h-[640px] min-h-24 overflow-hidden rounded-xl bg-muted transition-[filter] duration-200 group-hover/item:brightness-110"
+          style={{ aspectRatio: ratio }}
+        >
+          <MediaThumb id={file.id} hasThumb={file.hasThumb} />
+          {isVideo(file) && (
+            <DurationBadge durationMs={file.durationMs} className="absolute bottom-2.5 left-2.5" />
           )}
-          {isVideo && (
-            <span className="absolute bottom-2 left-2 flex size-7 items-center justify-center rounded-full bg-black/60 text-white">
-              <PlayIcon className="size-3.5 fill-current" />
-            </span>
-          )}
-        </div>
-        <div className="space-y-0.5 p-2.5">
-          <p className="truncate text-sm font-medium" title={file.name}>
+        </span>
+        <span className="flex justify-between gap-2 px-0.5 pt-2 text-xs">
+          <span className="truncate text-[#d6d8dd]" title={file.name}>
             {file.name}
-          </p>
-          <p className="text-xs text-muted-foreground">{formatBytes(file.size)}</p>
-        </div>
+          </span>
+          <span className="shrink-0 font-mono text-muted-foreground">{formatBytes(file.size)}</span>
+        </span>
       </button>
     </ItemWithMenu>
   );
