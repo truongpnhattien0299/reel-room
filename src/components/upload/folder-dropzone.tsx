@@ -62,27 +62,53 @@ export function FolderDropzone({
   );
 }
 
-export function UploadButton({ folderId }: { folderId: string }) {
+/** Hidden file input, plus `open()` to show the picker; picked files upload into the folder. */
+function useFilePicker(folderId: string) {
   const { addFiles } = useUploads();
   const input = useRef<HTMLInputElement>(null);
+  const element = (
+    <input
+      ref={input}
+      type="file"
+      accept={ACCEPT}
+      multiple
+      hidden
+      onChange={(e) => {
+        const files = Array.from(e.target.files ?? []);
+        e.target.value = "";
+        if (files.length) void addFiles(folderId, files);
+      }}
+    />
+  );
+  return { open: () => input.current?.click(), element };
+}
+
+export function UploadButton({ folderId }: { folderId: string }) {
+  const picker = useFilePicker(folderId);
   return (
     <>
-      <Button size="xl" className="font-semibold" onClick={() => input.current?.click()}>
+      <Button size="xl" className="font-semibold" onClick={picker.open}>
         <UploadIcon data-icon="inline-start" />
         Upload
       </Button>
-      <input
-        ref={input}
-        type="file"
-        accept={ACCEPT}
-        multiple
-        hidden
-        onChange={(e) => {
-          const files = Array.from(e.target.files ?? []);
-          e.target.value = "";
-          if (files.length) void addFiles(folderId, files);
-        }}
-      />
+      {picker.element}
     </>
+  );
+}
+
+/** Makes a placeholder (the empty-folder box) open the file picker when clicked. */
+export function UploadArea({ folderId, children }: { folderId: string; children: React.ReactNode }) {
+  const picker = useFilePicker(folderId);
+  return (
+    <div className="relative">
+      {children}
+      <button
+        type="button"
+        aria-label="Chọn ảnh, video để upload"
+        onClick={picker.open}
+        className="absolute inset-0 cursor-pointer rounded-[18px] transition-colors outline-none hover:bg-primary/[0.04] hover:ring-1 hover:ring-primary/50 focus-visible:ring-2 focus-visible:ring-ring"
+      />
+      {picker.element}
+    </div>
   );
 }
