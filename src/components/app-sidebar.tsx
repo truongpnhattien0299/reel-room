@@ -1,11 +1,19 @@
 "use client";
 
-import { ChevronsUpDownIcon, ImageIcon, LogOutIcon, PlusIcon, ShieldIcon } from "lucide-react";
+import {
+  ChevronsUpDownIcon,
+  ImageIcon,
+  LogOutIcon,
+  PlusIcon,
+  ShieldIcon,
+  Trash2Icon,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { ReelMark, Wordmark } from "@/components/brand/reel-mark";
 import { NameDialog } from "@/components/folders/name-dialog";
+import { SearchBox } from "@/components/search/search-box";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -61,6 +69,9 @@ export function AppSidebar({
           <ReelMark />
           <Wordmark />
         </Link>
+        <Suspense>
+          <SearchBox shortcut className="mt-4" />
+        </Suspense>
       </SidebarHeader>
 
       <SidebarContent className="gap-4 px-2">
@@ -75,6 +86,16 @@ export function AppSidebar({
                 >
                   <ImageIcon className={pathname === "/" ? "text-primary" : undefined} />
                   <span>Thư viện</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname === "/trash"}
+                  className={itemClass}
+                  render={<Link href="/trash" />}
+                >
+                  <Trash2Icon className={pathname === "/trash" ? "text-primary" : undefined} />
+                  <span>Thùng rác</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               {isAdmin && (

@@ -119,10 +119,12 @@ export const folders = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date()),
     deletedAt: timestamp("deleted_at"),
+    deletedBy: text("deleted_by").references(() => user.id, { onDelete: "set null" }),
   },
   (t) => [
     index("folders_parent_idx").on(t.parentId),
     index("folders_path_idx").on(t.path.op("text_pattern_ops")),
+    index("folders_deleted_idx").on(t.deletedAt),
     // Sibling folder names are unique (ignoring trashed ones).
     uniqueIndex("folders_sibling_name_uq")
       .on(sql`coalesce(${t.parentId}, '00000000-0000-0000-0000-000000000000'::uuid)`, sql`lower(${t.name})`)
@@ -159,9 +161,11 @@ export const files = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date()),
     deletedAt: timestamp("deleted_at"),
+    deletedBy: text("deleted_by").references(() => user.id, { onDelete: "set null" }),
   },
   (t) => [
     index("files_folder_idx").on(t.folderId),
+    index("files_deleted_idx").on(t.deletedAt),
     index("files_status_created_idx").on(t.status, t.createdAt),
   ],
 );

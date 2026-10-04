@@ -1,5 +1,6 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import { account, files, folderPermissions, folders, user, type FolderRole } from "@/db/schema";
 import { isAdmin, type Session } from "@/lib/auth";
@@ -178,16 +179,25 @@ export async function listRootFoldersWithStats(session: Session) {
 
 export type LibraryFolder = Awaited<ReturnType<typeof listRootFoldersWithStats>>[number];
 
+/**
+ * SQL condition: the user holds a grant (of at least `min`) on the folder at
+ * `path` or one of its ancestors. Undefined for admins, who see everything.
+ */
+function grantedOn(session: Session, path: SQL | AnyColumn, min: "viewer" | "editor" = "viewer") {
+  if (isAdmin(session)) return undefined;
+  const roles = min === "viewer" ? sql`('viewer','editor','owner')` : sql`('editor','owner')`;
+  return sql`exists (
+    select 1 from folder_permissions p
+    join folders g on g.id = p.folder_id
+    where p.user_id = ${session.user.id}
+      and p.role in ${roles}
+      and (${path} = g.path or ${path} like g.path || '/%')
+  )`;
+}
+
 /** Newest files across every folder the user can see. */
 export async function listRecentFiles(session: Session, limit = 12) {
-  const visible = isAdmin(session)
-    ? undefined
-    : sql`exists (
-        select 1 from folder_permissions p
-        join folders g on g.id = p.folder_id
-        where p.user_id = ${session.user.id}
-          and (${folders.path} = g.path or ${folders.path} like g.path || '/%')
-      )`;
+  const visible = grantedOn(session, folders.path);
   const rows = await db
     .select({ ...fileColumns, folderId: folders.id, folderName: folders.name })
     .from(files)
@@ -242,4 +252,147 @@ export async function listUsers() {
     .from(user)
     .leftJoin(account, and(eq(account.userId, user.id), eq(account.providerId, "credential")))
     .orderBy(asc(user.name));
+}
+
+// ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
+
+const escapeLike = (s: string) => s.replace(/[\\%_]/g, "\\$&");
+
+/** Accent- and case-insensitive substring match: "san khau" finds "Sân khấu". */
+const nameMatches = (column: AnyColumn, term: string) =>
+  sql`unaccent(${column}) ilike unaccent(${`%${escapeLike(term)}%`})`;
+
+const parentFolder = alias(folders, "parent_folder");
+
+export async function searchLibrary(session: Session, rawTerm: string) {
+  const term = rawTerm.trim().slice(0, 100);
+  if (!term) return { folders: [], files: [] };
+
+  const [folderRows, fileRows] = await Promise.all([
+    db
+      .select({ id: folders.id, name: folders.name, parentName: parentFolder.name })
+      .from(folders)
+      .leftJoin(parentFolder, eq(parentFolder.id, folders.parentId))
+      .where(
+        and(isNull(folders.deletedAt), nameMatches(folders.name, term), grantedOn(session, folders.path)),
+      )
+      .orderBy(asc(folders.name))
+      .limit(20),
+    db
+      .select({ ...fileColumns, folderId: folders.id, folderName: folders.name })
+      .from(files)
+      .innerJoin(folders, eq(folders.id, files.folderId))
+      .innerJoin(user, eq(user.id, files.uploadedBy))
+      .where(
+        and(
+          eq(files.status, "ready"),
+          isNull(files.deletedAt),
+          isNull(folders.deletedAt),
+          nameMatches(files.name, term),
+          grantedOn(session, folders.path),
+        ),
+      )
+      .orderBy(desc(files.createdAt))
+      .limit(60),
+  ]);
+
+  return {
+    folders: folderRows,
+    files: fileRows.map(({ folderId, folderName, ...f }) => ({ ...toFileItem(f), folderId, folderName })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Trash
+// ---------------------------------------------------------------------------
+
+/** Trashed items stay this long before the daily cron purges them. */
+export const TRASH_RETENTION_DAYS = 30;
+
+const deleter = alias(user, "deleter");
+
+export type TrashItem = {
+  kind: "folder" | "file";
+  id: string;
+  name: string;
+  /** Where it lived: the parent folder (folders) or containing folder (files). */
+  location: string | null;
+  deletedAt: Date;
+  deletedByName: string | null;
+  /** Whole days until the cron purges it (0 = today). */
+  daysLeft: number;
+  mimeType?: string;
+  hasThumb?: boolean;
+  size?: number;
+};
+
+/**
+ * Items the user deleted directly — a folder trashed together with its parent
+ * (same timestamp) is represented by that parent, not listed again. Only items
+ * the user can edit are shown, since only they can restore them.
+ */
+export async function listTrash(session: Session): Promise<TrashItem[]> {
+  const [folderRows, fileRows] = await Promise.all([
+    db
+      .select({
+        id: folders.id,
+        name: folders.name,
+        location: parentFolder.name,
+        deletedAt: folders.deletedAt,
+        deletedByName: deleter.name,
+      })
+      .from(folders)
+      .leftJoin(parentFolder, eq(parentFolder.id, folders.parentId))
+      .leftJoin(deleter, eq(deleter.id, folders.deletedBy))
+      .where(
+        and(
+          isNotNull(folders.deletedAt),
+          or(isNull(parentFolder.id), isNull(parentFolder.deletedAt), ne(parentFolder.deletedAt, folders.deletedAt)),
+          grantedOn(session, folders.path, "editor"),
+        ),
+      ),
+    db
+      .select({
+        id: files.id,
+        name: files.name,
+        location: folders.name,
+        deletedAt: files.deletedAt,
+        deletedByName: deleter.name,
+        mimeType: files.mimeType,
+        thumbKey: files.thumbKey,
+        size: files.size,
+      })
+      .from(files)
+      .innerJoin(folders, eq(folders.id, files.folderId))
+      .leftJoin(deleter, eq(deleter.id, files.deletedBy))
+      .where(
+        and(
+          isNotNull(files.deletedAt),
+          eq(files.status, "ready"),
+          or(isNull(folders.deletedAt), ne(folders.deletedAt, files.deletedAt)),
+          grantedOn(session, folders.path, "editor"),
+        ),
+      ),
+  ]);
+
+  const now = Date.now();
+  const daysLeft = (d: Date) =>
+    Math.max(0, Math.ceil((d.getTime() + TRASH_RETENTION_DAYS * 86_400_000 - now) / 86_400_000));
+  return [
+    ...folderRows.map((f) => ({
+      ...f,
+      kind: "folder" as const,
+      deletedAt: f.deletedAt!,
+      daysLeft: daysLeft(f.deletedAt!),
+    })),
+    ...fileRows.map(({ thumbKey, ...f }) => ({
+      ...f,
+      kind: "file" as const,
+      deletedAt: f.deletedAt!,
+      daysLeft: daysLeft(f.deletedAt!),
+      hasThumb: thumbKey !== null,
+    })),
+  ].sort((a, b) => b.deletedAt.getTime() - a.deletedAt.getTime());
 }

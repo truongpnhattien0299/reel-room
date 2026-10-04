@@ -1,13 +1,20 @@
 "use server";
 
-import { and, eq, inArray, isNull, like, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, like, or } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { db } from "@/db";
 import { files, folderPermissions, folders, user } from "@/db/schema";
 import { auth, isAdmin, requireSession } from "@/lib/auth";
-import { ForbiddenError, NotFoundError, requireFolderRole } from "@/server/permissions";
+import {
+  ForbiddenError,
+  getEffectiveRole,
+  NotFoundError,
+  requireFolderRole,
+  roleAtLeast,
+} from "@/server/permissions";
+import { purgeFiles, purgeFolderTree } from "@/server/purge";
 import { listFolderMembers } from "@/server/queries";
 
 export type ActionResult = { error?: string };
@@ -100,7 +107,7 @@ export async function trashFolder(folderId: string) {
     await db.batch([
       db
         .update(files)
-        .set({ deletedAt: now })
+        .set({ deletedAt: now, deletedBy: session.user.id })
         .where(
           and(
             isNull(files.deletedAt),
@@ -110,7 +117,10 @@ export async function trashFolder(folderId: string) {
             ),
           ),
         ),
-      db.update(folders).set({ deletedAt: now }).where(and(inSubtree, isNull(folders.deletedAt))),
+      db
+        .update(folders)
+        .set({ deletedAt: now, deletedBy: session.user.id })
+        .where(and(inSubtree, isNull(folders.deletedAt))),
     ]);
   });
 }
@@ -184,8 +194,106 @@ export async function renameFile(fileId: string, rawName: string) {
 
 export async function trashFile(fileId: string) {
   return run(async () => {
+    const session = await requireSession();
     await requireFileRole(fileId, "editor");
-    await db.update(files).set({ deletedAt: new Date() }).where(eq(files.id, fileId));
+    await db
+      .update(files)
+      .set({ deletedAt: new Date(), deletedBy: session.user.id })
+      .where(eq(files.id, fileId));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Trash: restore and permanent delete
+// ---------------------------------------------------------------------------
+
+/**
+ * Loads a trashed folder the user may manage: editor on it, owner when it was
+ * a top-level folder (the same rule as trashing it).
+ */
+async function requireTrashedFolder(folderId: string) {
+  const session = await requireSession();
+  const [folder] = await db
+    .select()
+    .from(folders)
+    .where(and(eq(folders.id, folderId), isNotNull(folders.deletedAt)));
+  if (!folder) throw new NotFoundError("Không còn trong thùng rác");
+  const role = await getEffectiveRole(session, folder);
+  if (!roleAtLeast(role, folder.parentId === null ? "owner" : "editor")) {
+    throw new ForbiddenError();
+  }
+  return folder;
+}
+
+async function requireTrashedFile(fileId: string) {
+  const session = await requireSession();
+  const [row] = await db
+    .select({ file: files, folder: folders })
+    .from(files)
+    .innerJoin(folders, eq(folders.id, files.folderId))
+    .where(and(eq(files.id, fileId), isNotNull(files.deletedAt)));
+  if (!row) throw new NotFoundError("Không còn trong thùng rác");
+  if (!roleAtLeast(await getEffectiveRole(session, row.folder), "editor")) {
+    throw new ForbiddenError();
+  }
+  return row;
+}
+
+/** Restores the folder and whatever was trashed together with it. */
+export async function restoreFolder(folderId: string) {
+  return run(async () => {
+    const folder = await requireTrashedFolder(folderId);
+    if (folder.parentId) {
+      const [parent] = await db
+        .select({ deletedAt: folders.deletedAt })
+        .from(folders)
+        .where(eq(folders.id, folder.parentId));
+      if (parent?.deletedAt) {
+        throw new ForbiddenError("Folder cha cũng đang trong thùng rác. Khôi phục folder cha trước.");
+      }
+    }
+    // Items trashed earlier on their own keep their own timestamp and stay put.
+    const stamp = folder.deletedAt!;
+    const inSubtree = or(eq(folders.path, folder.path), like(folders.path, `${folder.path}/%`));
+    await db.batch([
+      db
+        .update(folders)
+        .set({ deletedAt: null, deletedBy: null })
+        .where(and(inSubtree, eq(folders.deletedAt, stamp))),
+      db
+        .update(files)
+        .set({ deletedAt: null, deletedBy: null })
+        .where(
+          and(
+            eq(files.deletedAt, stamp),
+            inArray(files.folderId, db.select({ id: folders.id }).from(folders).where(inSubtree)),
+          ),
+        ),
+    ]);
+  });
+}
+
+export async function restoreFile(fileId: string) {
+  return run(async () => {
+    const { folder } = await requireTrashedFile(fileId);
+    if (folder.deletedAt) {
+      throw new ForbiddenError(`Folder “${folder.name}” đang trong thùng rác. Khôi phục folder trước.`);
+    }
+    await db.update(files).set({ deletedAt: null, deletedBy: null }).where(eq(files.id, fileId));
+  });
+}
+
+export async function purgeFolder(folderId: string) {
+  return run(async () => {
+    const folder = await requireTrashedFolder(folderId);
+    await purgeFolderTree(folder.path);
+  });
+}
+
+export async function purgeFile(fileId: string) {
+  return run(async () => {
+    await requireTrashedFile(fileId);
+    await purgeFiles([fileId]);
   });
 }
 
