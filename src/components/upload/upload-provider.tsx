@@ -14,7 +14,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { isMediaType, MAX_FILE_SIZE, MAX_FILES_PER_BATCH } from "@/lib/upload-limits";
-import { extractMediaInfo, type MediaInfo } from "./thumbnail";
+import { extractMediaInfo, type MediaInfo, uploadThumbnailBlob } from "./thumbnail";
 
 /**
  * Uppy derives its own file ids (name/type/size/mtime/relativePath), so our
@@ -68,16 +68,12 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
 /** Thumbnail goes straight to R2 through the same signing endpoint. */
 async function uploadThumbnail(fileId: string, info: MediaInfo) {
   if (!info.thumb) return false;
-  try {
-    const { url, headers } = await postJson<{ url: string; headers?: Record<string, string> }>(
-      "/api/uploads/sign",
-      { method: "PUT", key: `thumbs/${fileId}.webp` },
-    );
-    const res = await fetch(url, { method: "PUT", body: info.thumb, headers });
-    return res.ok;
-  } catch {
-    return false;
-  }
+  return uploadThumbnailBlob(fileId, info.thumb, () =>
+    postJson<{ url: string; headers?: Record<string, string> }>("/api/uploads/sign", {
+      method: "PUT",
+      key: `thumbs/${fileId}.webp`,
+    }),
+  );
 }
 
 export function UploadProvider({ children }: { children: React.ReactNode }) {
