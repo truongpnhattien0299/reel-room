@@ -16,7 +16,13 @@ import { toast } from "sonner";
 import { isMediaType, MAX_FILE_SIZE, MAX_FILES_PER_BATCH } from "@/lib/upload-limits";
 import { extractMediaInfo, type MediaInfo } from "./thumbnail";
 
-type Meta = { key: string; folderId: string };
+/**
+ * Uppy derives its own file ids (name/type/size/mtime/relativePath), so our
+ * server-side `fileId` travels in meta and every event is mapped through it.
+ * `relativePath` is set to `fileId` too, which makes Uppy's id unique per
+ * registration: the same file can be uploaded into two folders.
+ */
+type Meta = { key: string; folderId: string; fileId: string; relativePath: string };
 
 export type UploadStatus = "uploading" | "finishing" | "done" | "error";
 
@@ -102,6 +108,17 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     }),
   );
 
+  // Our fileId -> Uppy's file id.
+  const uppyIds = useRef(new Map<string, string>());
+  const removeFromUppy = useCallback(
+    (id: string) => {
+      const uppyId = uppyIds.current.get(id);
+      if (uppyId && uppy.getFile(uppyId)) uppy.removeFile(uppyId);
+      uppyIds.current.delete(id);
+    },
+    [uppy],
+  );
+
   // Files whose bytes are in R2 but whose /complete call failed; retrying
   // those must not re-upload.
   const uploadedButNotFinalized = useRef(new Set<string>());
@@ -122,7 +139,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         });
         sideTasks.current.delete(id);
         uploadedButNotFinalized.current.delete(id);
-        if (uppy.getFile(id)) uppy.removeFile(id);
+        removeFromUppy(id);
         patch(id, { status: "done" });
         scheduleRefresh();
       } catch (err) {
@@ -130,24 +147,24 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         patch(id, { status: "error", error: (err as Error).message });
       }
     },
-    [uppy, patch, scheduleRefresh],
+    [patch, removeFromUppy, scheduleRefresh],
   );
 
   useEffect(() => {
     const onProgress: Parameters<typeof uppy.on<"upload-progress">>[1] = (file, progress) => {
       if (!file) return;
-      patch(file.id, { bytesUploaded: progress.bytesUploaded ?? 0 });
+      patch(file.meta.fileId, { bytesUploaded: progress.bytesUploaded ?? 0 });
     };
 
     const onSuccess: Parameters<typeof uppy.on<"upload-success">>[1] = (file) => {
       if (!file) return;
-      patch(file.id, { bytesUploaded: file.size ?? 0 });
-      void finalize(file.id);
+      patch(file.meta.fileId, { bytesUploaded: file.size ?? 0 });
+      void finalize(file.meta.fileId);
     };
 
     const onError: Parameters<typeof uppy.on<"upload-error">>[1] = (file, error) => {
       if (!file) return;
-      patch(file.id, { status: "error", error: error.message });
+      patch(file.meta.fileId, { status: "error", error: error.message });
     };
 
     uppy.on("upload-progress", onProgress);
@@ -160,7 +177,10 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     };
   }, [uppy, patch, finalize]);
 
-  useEffect(() => () => uppy.destroy(), [uppy]);
+  // Stop transfers when leaving the app (e.g. sign-out). Not destroy(): it
+  // uninstalls the S3 plugin, and StrictMode runs this cleanup right after
+  // the first mount while keeping the same instance.
+  useEffect(() => () => uppy.cancelAll(), [uppy]);
 
   const active = items.some((it) => it.status === "uploading" || it.status === "finishing");
   useEffect(() => {
@@ -217,16 +237,16 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
           );
         });
 
-        uppy.addFiles(
-          batch.map((file, j) => ({
-            // Our id, so the same file can be uploaded to two folders.
-            id: registered[j].fileId,
+        batch.forEach((file, j) => {
+          const { fileId, key } = registered[j];
+          const uppyId = uppy.addFile({
             name: file.name,
             type: file.type,
             data: file,
-            meta: { key: registered[j].key, folderId },
-          })),
-        );
+            meta: { key, folderId, fileId, relativePath: fileId },
+          });
+          uppyIds.current.set(fileId, uppyId);
+        });
       }
       void uppy.upload();
     },
@@ -235,13 +255,13 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
   const cancel = useCallback(
     (id: string) => {
-      if (uppy.getFile(id)) uppy.removeFile(id);
+      removeFromUppy(id);
       sideTasks.current.delete(id);
       uploadedButNotFinalized.current.delete(id);
       setItems((prev) => prev.filter((it) => it.id !== id));
       void fetch(`/api/uploads/${id}`, { method: "DELETE" });
     },
-    [uppy],
+    [removeFromUppy],
   );
 
   const retry = useCallback(
@@ -250,8 +270,10 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         void finalize(id);
         return;
       }
+      const uppyId = uppyIds.current.get(id);
+      if (!uppyId) return;
       patch(id, { status: "uploading", error: undefined });
-      void uppy.retryUpload(id);
+      void uppy.retryUpload(uppyId);
     },
     [uppy, patch, finalize],
   );

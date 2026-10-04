@@ -24,11 +24,14 @@ export function MediaPreview({
   useEffect(() => {
     if (index === null) return;
     const onKey = (e: KeyboardEvent) => {
+      // A focused <video> uses the arrows to seek; leave those alone.
+      if (e.target instanceof HTMLVideoElement) return;
       if (e.key === "ArrowLeft" && index > 0) onIndexChange(index - 1);
       if (e.key === "ArrowRight" && index < files.length - 1) onIndexChange(index + 1);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Capture phase: the dialog stops keydown from bubbling up to window.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [index, files.length, onIndexChange]);
 
   return (
