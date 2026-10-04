@@ -16,6 +16,7 @@ import {
   user,
 } from "@/db/schema";
 import { auth, isAdmin, requireSession } from "@/lib/auth";
+import { headObject, presignUploadRequest, thumbKey } from "@/lib/r2";
 import {
   ForbiddenError,
   getEffectiveRole,
@@ -37,11 +38,17 @@ const nameSchema = z
   .max(200, "Tên quá dài")
   .refine((s) => !s.includes("/"), "Tên không được chứa ký tự /");
 
-/** Turns expected failures into `{ error }` so forms can show them. */
-async function run<T = void>(fn: () => Promise<T>): Promise<ActionResult<T>> {
+/**
+ * Turns expected failures into `{ error }` so forms can show them. Refreshes
+ * the page afterwards unless `refresh: false` (nothing it shows changed).
+ */
+async function run<T = void>(
+  fn: () => Promise<T>,
+  opts: { refresh?: boolean } = {},
+): Promise<ActionResult<T>> {
   try {
     const data = await fn();
-    refresh();
+    if (opts.refresh !== false) refresh();
     return data === undefined ? {} : { data };
   } catch (err) {
     if (err instanceof ForbiddenError || err instanceof NotFoundError) {
@@ -283,6 +290,53 @@ export async function renameFile(fileId: string, rawName: string) {
     const name = nameSchema.parse(rawName);
     await requireFileRole(fileId, "editor");
     await db.update(files).set({ name }).where(eq(files.id, fileId));
+  });
+}
+
+/** A ready file the caller can edit that still has no thumbnail. */
+async function requireThumblessFile(fileId: string) {
+  z.uuid().parse(fileId);
+  const session = await requireSession();
+  const [file] = await db
+    .select({ folderId: files.folderId })
+    .from(files)
+    .where(
+      and(
+        eq(files.id, fileId),
+        eq(files.status, "ready"),
+        isNull(files.deletedAt),
+        isNull(files.thumbKey),
+      ),
+    );
+  if (!file) throw new NotFoundError("File không tồn tại hoặc đã có thumbnail");
+  await requireFolderRole(session, file.folderId, "editor");
+}
+
+/**
+ * Signed PUT for a thumbnail made in the viewer, for files whose upload-time
+ * thumbnail never reached storage.
+ */
+export async function signThumbnailUpload(fileId: string) {
+  return run(
+    async () => {
+      await requireThumblessFile(fileId);
+      const contentType = "image/webp";
+      const url = await presignUploadRequest({ op: "putObject", key: thumbKey(fileId), contentType });
+      return { url, headers: { "Content-Type": contentType } };
+    },
+    { refresh: false },
+  );
+}
+
+/** Links a thumbnail uploaded through `signThumbnailUpload` to its file. */
+export async function attachThumbnail(fileId: string) {
+  return run(async () => {
+    await requireThumblessFile(fileId);
+    if (!(await headObject(thumbKey(fileId)))) throw new NotFoundError("Thumbnail chưa có trên storage");
+    await db
+      .update(files)
+      .set({ thumbKey: thumbKey(fileId) })
+      .where(and(eq(files.id, fileId), isNull(files.thumbKey)));
   });
 }
 

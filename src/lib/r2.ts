@@ -108,7 +108,7 @@ export async function presignUploadRequest(
 
 export async function presignRead(
   key: string,
-  opts: { downloadName?: string; contentType?: string } = {},
+  opts: { downloadName?: string; contentType?: string; noStore?: boolean } = {},
 ) {
   return getSignedUrl(
     r2,
@@ -116,6 +116,8 @@ export async function presignRead(
       Bucket,
       Key: key,
       ResponseContentType: opts.contentType,
+      // Also makes the URL unique, so a CORS read never hits a cached non-CORS copy.
+      ResponseCacheControl: opts.noStore ? "no-store" : undefined,
       ResponseContentDisposition: opts.downloadName
         ? `attachment; filename*=UTF-8''${encodeURIComponent(opts.downloadName)}`
         : undefined,

@@ -12,6 +12,7 @@ import { FileCard } from "./file-card";
 import { MediaPreview } from "./media-preview";
 import { NameDialog } from "./name-dialog";
 import { ShareFilesDialog } from "./share-links";
+import { backfillThumbnail } from "./thumbnail-backfill";
 
 type Filter = "all" | "image" | "video";
 
@@ -46,6 +47,12 @@ export function FileGrid({
   const visible =
     filter === "all" ? files : files.filter((f) => (filter === "video") === isVideo(f));
   const previewIndex = previewId ? visible.findIndex((f) => f.id === previewId) : -1;
+  const previewFile = previewIndex === -1 ? null : visible[previewIndex];
+
+  // Opening a file whose thumbnail got lost at upload makes one for the grid.
+  useEffect(() => {
+    if (canEdit && previewFile && !previewFile.hasThumb) void backfillThumbnail(previewFile);
+  }, [canEdit, previewFile]);
 
   // Files that left the folder (trashed elsewhere) drop out of the selection.
   const picked = selected ? files.filter((f) => selected.has(f.id)).map((f) => f.id) : [];

@@ -2,6 +2,8 @@
 export const contentUrl = (id: string) => `/api/files/${id}/content`;
 export const downloadUrl = (id: string) => `/api/files/${id}/content?download=1`;
 export const thumbUrl = (id: string) => `/api/files/${id}/thumb`;
+/** Uncached original, readable by a canvas (to make a missing thumbnail). */
+export const thumbSourceUrl = (id: string) => `/api/files/${id}/content?fresh=1`;
 export const isVideo = (file: { mimeType: string }) => file.mimeType.startsWith("video/");
 
 export type MediaUrls = {

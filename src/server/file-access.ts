@@ -20,9 +20,9 @@ export async function requireReadableFile(session: Session, fileId: string) {
  * Redirect to a short-lived signed R2 URL. The browser caches the redirect for
  * a while (shorter than the URL lifetime) so grids don't re-sign on every view.
  */
-export function redirectToSigned(url: string) {
+export function redirectToSigned(url: string, { noStore = false } = {}) {
   return new Response(null, {
     status: 302,
-    headers: { Location: url, "Cache-Control": "private, max-age=1800" },
+    headers: { Location: url, "Cache-Control": noStore ? "no-store" : "private, max-age=1800" },
   });
 }
