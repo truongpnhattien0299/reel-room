@@ -23,6 +23,7 @@ File không bao giờ đi qua server Next.js, nên không vướng giới hạn 
 - Quyền theo folder: `viewer` < `editor` < `owner`. Cấp ở một folder thì áp dụng cho toàn bộ cây con. Quyền thực tế là quyền **cao nhất** được cấp ở folder đó hoặc ở bất kỳ folder cha nào.
 - Ai cũng tạo được folder gốc và trở thành `owner` của nó.
 - `editor`: upload, tạo folder con, đổi tên, xoá, tạo link chia sẻ. `owner`: thêm quyền chia sẻ, và xoá được folder gốc.
+- Xoá là xoá mềm (`deleted_at`), chưa có UI thùng rác.
 
 ## Link chia sẻ công khai
 
@@ -30,7 +31,6 @@ File không bao giờ đi qua server Next.js, nên không vướng giới hạn 
 - Thời hạn: 1/7/30 ngày, ngày tuỳ chọn (tối đa 365 ngày) hoặc không hết hạn.
 - Link ngừng hoạt động khi hết hạn, bị thu hồi (người tạo hoặc owner), folder vào thùng rác, hoặc người tạo mất quyền `editor` trên folder.
 - File được phục vụ qua `/api/s/<token>/files/<id>/{content,thumb}` (cùng cơ chế redirect 302 tới URL ký sẵn). Cron dọn link đã hết hạn quá 30 ngày.
-- Xoá là xoá mềm (`deleted_at`), chưa có UI thùng rác.
 
 ## Setup
 
@@ -70,6 +70,7 @@ Nếu chưa có `RESEND_API_KEY`, email mời và reset mật khẩu sẽ đư�
 
 ### 4. Deploy lên Vercel
 - Import repo và set toàn bộ env trong `.env.example`. `BETTER_AUTH_URL` là domain production.
+- Migration chạy tự động khi deploy **Production**: Vercel dùng script `vercel-build` (`drizzle-kit migrate` rồi `next build`); migration lỗi thì build fail, bản cũ vẫn chạy. Preview không migrate. Nếu đã đặt *Build Command* riêng trong Vercel thì xoá đi để Vercel dùng script này.
 - `CRON_SECRET`: Vercel tự gửi header này cho cron `/api/cron/cleanup` (chạy hằng ngày, xoá các upload không hoàn tất sau 24 giờ).
 - Thêm domain production vào CORS của R2.
 - Gói Hobby của Vercel không cho dùng thương mại, công ty phải dùng gói Pro.
