@@ -1,4 +1,4 @@
-# Folder Studio
+# ReelRoom
 
 Thư viện ảnh/video nội bộ có folder và phân quyền theo folder.
 
@@ -33,7 +33,7 @@ Yêu cầu Node ≥ 22.13 (`nvm use`) và pnpm.
 Tạo project ở [neon.tech](https://neon.tech), copy connection string vào `DATABASE_URL`.
 
 ### 2. Cloudflare R2
-1. Tạo bucket (vd. `folder-studio`), **để private** (không bật public access).
+1. Tạo bucket (vd. `reelroom`), **để private** (không bật public access).
 2. R2 → *Manage API tokens* → tạo token quyền **Object Read & Write** cho bucket này. Lấy `Account ID`, `Access Key ID`, `Secret Access Key`.
 3. Bucket → *Settings* → **CORS policy**:
    ```json

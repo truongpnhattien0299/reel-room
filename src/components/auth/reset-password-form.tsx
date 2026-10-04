@@ -38,7 +38,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
     <Card className="w-full max-w-sm">
       <CardHeader>
         <CardTitle>Đặt mật khẩu</CardTitle>
-        <CardDescription>Chọn mật khẩu cho tài khoản Folder Studio của bạn</CardDescription>
+        <CardDescription>Chọn mật khẩu cho tài khoản ReelRoom của bạn</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit}>

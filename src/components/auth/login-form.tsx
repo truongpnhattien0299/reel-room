@@ -34,7 +34,7 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader>
-        <CardTitle>Folder Studio</CardTitle>
+        <CardTitle>ReelRoom</CardTitle>
         <CardDescription>Đăng nhập bằng tài khoản công ty</CardDescription>
       </CardHeader>
       <CardContent>

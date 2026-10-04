@@ -1,6 +1,13 @@
 "use client";
 
-import { ChevronsUpDownIcon, FolderIcon, HomeIcon, LogOutIcon, UsersIcon } from "lucide-react";
+import {
+  ChevronsUpDownIcon,
+  FilmIcon,
+  FolderIcon,
+  HomeIcon,
+  LogOutIcon,
+  UsersIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -53,9 +60,9 @@ export function AppSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" render={<Link href="/" />}>
               <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <FolderIcon className="size-4" />
+                <FilmIcon className="size-4" />
               </div>
-              <span className="font-semibold">Folder Studio</span>
+              <span className="font-semibold">ReelRoom</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

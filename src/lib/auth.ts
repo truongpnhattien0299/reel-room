@@ -23,9 +23,9 @@ export const auth = betterAuth({
     sendResetPassword: async ({ user, url }) => {
       await sendEmail(
         user.email,
-        "Đặt mật khẩu Folder Studio",
+        "Đặt mật khẩu ReelRoom",
         `<p>Chào ${user.name},</p>
-         <p>Bấm vào link dưới đây để đặt mật khẩu cho tài khoản Folder Studio của bạn:</p>
+         <p>Bấm vào link dưới đây để đặt mật khẩu cho tài khoản ReelRoom của bạn:</p>
          <p><a href="${url}">${url}</a></p>
          <p>Link hết hạn sau 24 giờ.</p>`,
       );

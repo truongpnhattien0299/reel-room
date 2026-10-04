@@ -16,7 +16,7 @@ const mono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Folder Studio", template: "%s · Folder Studio" },
+  title: { default: "ReelRoom", template: "%s · ReelRoom" },
   description: "Thư viện ảnh và video nội bộ",
 };
 
