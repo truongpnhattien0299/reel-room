@@ -6,6 +6,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { acceptInvite } from "@/server/actions";
 import { AuthHeading } from "./auth-shell";
+import { PasswordInput } from "./password-input";
 
 const inputClass = "h-12 rounded-xl px-3.5 text-[15px]";
 
@@ -54,10 +55,9 @@ export function AcceptInviteForm({ token, email }: { token: string; email: strin
           </Field>
           <Field>
             <FieldLabel htmlFor="password">Mật khẩu</FieldLabel>
-            <Input
+            <PasswordInput
               id="password"
               name="password"
-              type="password"
               autoComplete="new-password"
               minLength={8}
               maxLength={128}
@@ -68,10 +68,9 @@ export function AcceptInviteForm({ token, email }: { token: string; email: strin
           </Field>
           <Field data-invalid={error ? true : undefined}>
             <FieldLabel htmlFor="confirm">Nhập lại mật khẩu</FieldLabel>
-            <Input
+            <PasswordInput
               id="confirm"
               name="confirm"
-              type="password"
               autoComplete="new-password"
               minLength={8}
               maxLength={128}

@@ -7,6 +7,7 @@ import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field
 import { Input } from "@/components/ui/input";
 import { authClient } from "@/lib/auth-client";
 import { AuthHeading } from "./auth-shell";
+import { PasswordInput } from "./password-input";
 
 export function LoginForm({ redirectTo }: { redirectTo: string }) {
   const router = useRouter();
@@ -50,10 +51,9 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
           </Field>
           <Field data-invalid={error ? true : undefined}>
             <FieldLabel htmlFor="password">Mật khẩu</FieldLabel>
-            <Input
+            <PasswordInput
               id="password"
               name="password"
-              type="password"
               autoComplete="current-password"
               className="h-12 rounded-xl px-3.5 text-[15px]"
               required
