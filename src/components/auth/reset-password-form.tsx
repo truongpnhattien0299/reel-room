@@ -5,9 +5,9 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { authClient } from "@/lib/auth-client";
 import { AuthHeading } from "./auth-shell";
+import { PasswordInput } from "./password-input";
 
 export function ResetPasswordForm({ token }: { token: string }) {
   const router = useRouter();
@@ -41,10 +41,9 @@ export function ResetPasswordForm({ token }: { token: string }) {
         <FieldGroup className="gap-5">
           <Field>
             <FieldLabel htmlFor="password">Mật khẩu mới</FieldLabel>
-            <Input
+            <PasswordInput
               id="password"
               name="password"
-              type="password"
               autoComplete="new-password"
               minLength={8}
               className="h-12 rounded-xl px-3.5 text-[15px]"
@@ -54,10 +53,9 @@ export function ResetPasswordForm({ token }: { token: string }) {
           </Field>
           <Field data-invalid={error ? true : undefined}>
             <FieldLabel htmlFor="confirm">Nhập lại mật khẩu</FieldLabel>
-            <Input
+            <PasswordInput
               id="confirm"
               name="confirm"
-              type="password"
               autoComplete="new-password"
               minLength={8}
               className="h-12 rounded-xl px-3.5 text-[15px]"
