@@ -66,7 +66,7 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
         </FieldGroup>
       </form>
       <p className="border-t border-[#1f2229] pt-5 text-[13px] text-muted-foreground">
-        Chưa có tài khoản, hoặc quên mật khẩu? Nhờ quản trị viên gửi lời mời qua email.
+        Chưa có tài khoản? Nhờ quản trị viên gửi link mời. Quên mật khẩu? Liên hệ quản trị viên.
       </p>
     </>
   );

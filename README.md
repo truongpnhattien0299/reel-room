@@ -20,6 +20,7 @@ File không bao giờ đi qua server Next.js, nên không vướng giới hạn 
 ## Phân quyền
 
 - `admin` (role của Better Auth): toàn quyền, quản lý user ở `/admin/users`.
+- Mời user: admin nhập email + vai trò, nhận **link mời** `/invite/<token>` (hiện ngay trong dialog, đồng thời gửi email nếu đã cấu hình Resend). Người được mời mở link, tự nhập tên và mật khẩu để tạo tài khoản rồi được đăng nhập luôn. Link dùng một lần, hết hạn sau 7 ngày; admin sao chép lại, tạo link mới hoặc thu hồi trong mục "Lời mời đang chờ".
 - Quyền theo folder: `viewer` < `editor` < `owner`. Cấp ở một folder thì áp dụng cho toàn bộ cây con. Quyền thực tế là quyền **cao nhất** được cấp ở folder đó hoặc ở bất kỳ folder cha nào.
 - Ai cũng tạo được folder gốc và trở thành `owner` của nó.
 - `editor`: upload, tạo folder con, đổi tên, xoá, tạo link chia sẻ. `owner`: thêm quyền chia sẻ, và xoá được folder gốc.
@@ -66,12 +67,28 @@ pnpm create-admin you@company.com "Tên Bạn"
 pnpm dev
 ```
 
-Nếu chưa có `RESEND_API_KEY`, email mời và reset mật khẩu sẽ được **in ra console** của dev server.
+Nếu chưa cấu hình email, email mời và reset mật khẩu sẽ được **in ra console** của dev server. Link mời vẫn hiện trong dialog để gửi tay.
+
+### Email: Resend hoặc SMTP
+Chọn một trong hai. `EMAIL_PROVIDER` (`resend` | `smtp`) không bắt buộc: mặc định dùng Resend nếu có `RESEND_API_KEY`, không thì SMTP nếu có `SMTP_HOST`.
+
+**Resend** (cần domain):
+1. Tạo tài khoản ở [resend.com](https://resend.com) → *Domains* → *Add Domain*, nên dùng subdomain riêng (vd. `mail.your-domain.com`).
+2. Thêm các bản ghi DNS Resend đưa ra (MX + TXT SPF cho `send.…`, TXT DKIM `resend._domainkey.…`, tuỳ chọn DMARC) ở nơi quản lý DNS, chờ trạng thái **Verified**.
+3. *API Keys* → *Create API Key*, quyền **Sending access**, giới hạn theo domain vừa thêm → điền `RESEND_API_KEY`.
+4. `EMAIL_FROM="ReelRoom <noreply@mail.your-domain.com>"`: địa chỉ phải thuộc domain đã verify.
+
+**SMTP** (không cần domain, vd. Gmail):
+1. Bật *Xác minh 2 bước* cho tài khoản Google → [App passwords](https://myaccount.google.com/apppasswords) → tạo mật khẩu ứng dụng 16 ký tự.
+2. `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`, `SMTP_USER=ban@gmail.com`, `SMTP_PASS=<app password>`.
+3. `EMAIL_FROM="ReelRoom <ban@gmail.com>"`: Gmail chỉ gửi bằng chính địa chỉ đó. Giới hạn khoảng 500 email/ngày.
+
+Dịch vụ SMTP khác (Brevo, Mailgun, SES…) điền host/port/user/pass của dịch vụ đó; port 587 dùng STARTTLS.
 
 ### 4. Deploy lên Vercel
 - Import repo và set toàn bộ env trong `.env.example`. `BETTER_AUTH_URL` là domain production.
 - Migration chạy tự động khi deploy **Production**: Vercel dùng script `vercel-build` (`drizzle-kit migrate` rồi `next build`); migration lỗi thì build fail, bản cũ vẫn chạy. Preview không migrate. Nếu đã đặt *Build Command* riêng trong Vercel thì xoá đi để Vercel dùng script này.
-- `CRON_SECRET`: Vercel tự gửi header này cho cron `/api/cron/cleanup` (chạy hằng ngày, xoá các upload không hoàn tất sau 24 giờ).
+- `CRON_SECRET`: Vercel tự gửi header này cho cron `/api/cron/cleanup` (chạy hằng ngày, xoá các upload không hoàn tất sau 24 giờ, link chia sẻ và lời mời hết hạn quá 30 ngày).
 - Thêm domain production vào CORS của R2.
 - Gói Hobby của Vercel không cho dùng thương mại, công ty phải dùng gói Pro.
 
@@ -90,6 +107,7 @@ Nếu chưa có `RESEND_API_KEY`, email mời và reset mật khẩu sẽ đư�
 ```
 src/
   app/(app)/            trang cần đăng nhập: /, /f/[folderId], /admin/users
+  app/invite/[token]/   tạo tài khoản từ link mời (công khai)
   app/api/uploads/      đăng ký, ký request R2, hoàn tất, huỷ upload
   app/api/files/        redirect tới file gốc / thumbnail đã ký
   components/upload/    UploadProvider (Uppy), dropzone, panel tiến trình, tạo thumbnail
