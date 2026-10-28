@@ -12,6 +12,8 @@ import {
   XIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { FavoriteButton } from "@/components/favorites/favorite-button";
+import { useFavorites } from "@/components/favorites/favorites-provider";
 import { MediaThumb } from "@/components/folders/media-thumb";
 import { useMediaUrls } from "@/components/folders/media-urls";
 import { Button } from "@/components/ui/button";
@@ -27,7 +29,7 @@ import { mediaKind } from "@/lib/media";
 import { cn } from "@/lib/utils";
 import type { FileItem } from "@/server/queries";
 import { AudioPlayer } from "./audio-player";
-import { useViewerHotkeys } from "./hotkeys";
+import { ignoreHotkey, useViewerHotkeys, useWindowKeydown } from "./hotkeys";
 import { ImageViewer } from "./image-viewer";
 import { InfoPanel } from "./info-panel";
 import { VideoPlayer } from "./video-player";
@@ -61,6 +63,14 @@ export function MediaViewer({
   const downloadUrl = file && urls.download ? urls.download(file.id) : null;
 
   useViewerHotkeys({ enabled: file !== null, arrowsNavigate: kind === "image", onPrev: prev, onNext: next });
+
+  // S stars the file (F is taken by the players' fullscreen).
+  const favorites = useFavorites();
+  useWindowKeydown(file !== null && favorites !== null, (e) => {
+    if (e.key.toLowerCase() !== "s" || e.shiftKey || ignoreHotkey(e) || !file || !favorites) return;
+    e.preventDefault();
+    favorites.toggle("file", file.id);
+  });
 
   // Keep the current frame of the filmstrip in view.
   useEffect(() => {
@@ -114,6 +124,7 @@ export function MediaViewer({
                 >
                   <InfoIcon />
                 </Button>
+                <FavoriteButton kind="file" id={file.id} variant="toolbar" />
                 {downloadUrl && (
                   <Button
                     size="xl"
