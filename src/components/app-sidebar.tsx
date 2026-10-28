@@ -3,6 +3,7 @@
 import {
   ChevronsUpDownIcon,
   HardDriveIcon,
+  HistoryIcon,
   ImageIcon,
   Link2Icon,
   LogOutIcon,
@@ -131,6 +132,18 @@ export function AppSidebar({
                         className={pathname === "/admin/storage" ? "text-primary" : undefined}
                       />
                       <span>Dung lượng</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={pathname === "/admin/activity"}
+                      className={itemClass}
+                      render={<Link href="/admin/activity" />}
+                    >
+                      <HistoryIcon
+                        className={pathname === "/admin/activity" ? "text-primary" : undefined}
+                      />
+                      <span>Hoạt động</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 </>
