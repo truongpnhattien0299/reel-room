@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { sha256Stream } from "./hash";
+import { sha256Stream } from "./sha256";
 
 const streamOf = (...chunks: Uint8Array[]) =>
   new ReadableStream<Uint8Array>({
