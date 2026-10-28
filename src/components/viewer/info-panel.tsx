@@ -1,19 +1,11 @@
 import { FolderIcon } from "lucide-react";
+import { UserAvatar } from "@/components/user-avatar";
 import { formatBytes, formatDateTime, formatDuration } from "@/lib/format";
 import { mediaKind } from "@/lib/media";
-import { toneFor } from "@/lib/tones";
 import { cn } from "@/lib/utils";
 import type { FileItem } from "@/server/queries";
 
 const KIND_LABEL = { image: "Ảnh", video: "Video", audio: "Audio" };
-
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(-2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
 
 /** File details: the viewer's side panel on desktop, a bottom sheet on phones. */
 export function InfoPanel({ file, folderName }: { file: FileItem; folderName: string }) {
@@ -40,17 +32,12 @@ export function InfoPanel({ file, folderName }: { file: FileItem; folderName: st
       </dl>
       <div className="h-px shrink-0 bg-[#1f2229]" />
       {/* Public links leave the uploader out. */}
-      {file.uploaderName && (
+      {file.uploader && (
         <div className="flex flex-col gap-3">
           <SectionLabel>Người tải lên</SectionLabel>
           <div className="flex items-center gap-3">
-            <span
-              className="flex size-9 items-center justify-center rounded-full text-xs font-semibold"
-              style={{ background: toneFor(file.uploaderName).sky }}
-            >
-              {initials(file.uploaderName)}
-            </span>
-            <span className="font-medium">{file.uploaderName}</span>
+            <UserAvatar user={file.uploader} className="size-9" />
+            <span className="font-medium">{file.uploader.name}</span>
           </div>
         </div>
       )}

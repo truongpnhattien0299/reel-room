@@ -105,7 +105,7 @@ export const fileColumns = {
   height: files.height,
   durationMs: files.durationMs,
   createdAt: files.createdAt,
-  uploaderName: user.name,
+  uploader: { id: user.id, name: user.name, image: user.image },
 };
 
 export function toFileItem({ thumbKey, ...f }: { thumbKey: string | null } & Omit<FileItem, "hasThumb">) {
@@ -122,7 +122,8 @@ export type FileItem = {
   height: number | null;
   durationMs: number | null;
   createdAt: Date;
-  uploaderName: string;
+  /** Null on public share links. */
+  uploader: { id: string; name: string; image: string | null } | null;
 };
 
 export type FolderStats = {
@@ -244,6 +245,7 @@ export async function listUsers() {
       id: user.id,
       name: user.name,
       email: user.email,
+      image: user.image,
       role: user.role,
       banned: sql<boolean>`coalesce(${user.banned}, false)`,
       createdAt: user.createdAt,
@@ -262,6 +264,7 @@ export async function getUserDetail(id: string) {
       id: user.id,
       name: user.name,
       email: user.email,
+      image: user.image,
       role: user.role,
       banned: sql<boolean>`coalesce(${user.banned}, false)`,
       banReason: user.banReason,
