@@ -16,3 +16,4 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Files never pass through Next.js: the browser uploads to R2 with URLs signed by `/api/uploads/sign`, which only signs keys of the caller's own in-progress uploads.
 - DB driver is `neon-http`: no interactive transactions; use `db.batch([...])` for atomic multi-statement writes.
 - Verify with `pnpm typecheck && pnpm lint && pnpm build`.
+- Git flow: branch features/fixes off `develop` and open PRs into `develop` (`gh pr create --base develop`). Only `develop` is merged into `main` (release PR). Never PR a feature branch straight into `main`.
