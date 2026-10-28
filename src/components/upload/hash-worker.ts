@@ -1,4 +1,4 @@
-import { sha256Stream } from "./hash";
+import { sha256Stream } from "./sha256";
 
 self.onmessage = async (e: MessageEvent<{ id: number; file: File }>) => {
   const { id, file } = e.data;
