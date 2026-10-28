@@ -110,6 +110,7 @@ src/
   app/invite/[token]/   tạo tài khoản từ link mời (công khai)
   app/api/uploads/      đăng ký, ký request R2, hoàn tất, huỷ upload
   app/api/files/        redirect tới file gốc / thumbnail đã ký
+  app/api/downloads/    danh sách URL đã ký để trình duyệt tự nén zip (src/lib/zip-download.ts)
   components/upload/    UploadProvider (Uppy), dropzone, panel tiến trình, tạo thumbnail
   components/folders/   grid, menu, dialog đổi tên/chia sẻ/xoá, xem media
   db/schema.ts          bảng của Better Auth + folders, files, folder_permissions

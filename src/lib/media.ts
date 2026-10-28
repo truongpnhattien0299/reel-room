@@ -15,9 +15,16 @@ export type MediaUrls = {
   content: (id: string) => string;
   download: (id: string) => string;
   thumb: (id: string) => string;
+  /** POST endpoint listing what goes into a zip (see `src/lib/zip-download.ts`). */
+  zip: string;
 };
 
-export const memberMediaUrls: MediaUrls = { content: contentUrl, download: downloadUrl, thumb: thumbUrl };
+export const memberMediaUrls: MediaUrls = {
+  content: contentUrl,
+  download: downloadUrl,
+  thumb: thumbUrl,
+  zip: "/api/downloads",
+};
 
 /** Same files, served through a public link instead of the member's session. */
 export function sharedMediaUrls(token: string): MediaUrls {
@@ -26,6 +33,7 @@ export function sharedMediaUrls(token: string): MediaUrls {
     content: (id) => `${base}/${id}/content`,
     download: (id) => `${base}/${id}/content?download=1`,
     thumb: (id) => `${base}/${id}/thumb`,
+    zip: `/api/s/${encodeURIComponent(token)}/downloads`,
   };
 }
 
