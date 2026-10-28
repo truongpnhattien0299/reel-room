@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckIcon, DownloadIcon, PencilIcon, Trash2Icon } from "lucide-react";
+import { CheckIcon, DownloadIcon, FolderInputIcon, PencilIcon, Trash2Icon } from "lucide-react";
 import { formatBytes } from "@/lib/format";
 import { mediaKind } from "@/lib/media";
 import { cn } from "@/lib/utils";
@@ -18,12 +18,14 @@ export function FileCard({
   selected,
   onOpen,
   onRename,
+  onMove,
   onDelete,
 }: {
   file: FileItem;
   selected?: boolean;
   onOpen: () => void;
   onRename?: () => void;
+  onMove?: () => void;
   onDelete?: () => void;
 }) {
   const urls = useMediaUrls();
@@ -32,6 +34,7 @@ export function FileCard({
   if (!selecting) {
     actions.push({ label: "Tải về", icon: DownloadIcon, onClick: () => window.location.assign(urls.download(file.id)) });
     if (onRename) actions.push({ label: "Đổi tên", icon: PencilIcon, onClick: onRename });
+    if (onMove) actions.push({ label: "Di chuyển", icon: FolderInputIcon, onClick: onMove });
     if (onDelete) {
       actions.push({ label: "Xoá", icon: Trash2Icon, onClick: onDelete, destructive: true });
     }

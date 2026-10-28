@@ -74,3 +74,8 @@ Không cần migration.
 - Trình duyệt: chuyển một file sang folder khác → biến mất ở nguồn, hiện ở đích, thumbnail giữ nguyên. Chuyển một folder có con cháu → mở được cây ở chỗ mới, breadcrumb đúng.
 - Đăng nhập user viewer: không thấy mục "Di chuyển".
 - Mở link chia sẻ kiểu "files" sau khi chuyển một file trong đó ra ngoài → file không còn trong link.
+
+## Ghi chú khi làm
+- `getMoveTargets(fileIds?)` trả thêm `linkedFiles` (số file trong `fileIds` đang nằm trong link "files" của chính folder chứa nó) và `truncated` (quá 2000 folder → chỉ dùng ô tìm). Dialog lấy số cảnh báo "gỡ khỏi link" từ đây.
+- Cảnh báo quyền tính theo chuỗi folder tổ tiên: chỉ nói "người chỉ có quyền ở folder cũ sẽ không còn thấy" khi đích không nằm trong folder nguồn, chỉ nói "người có quyền ở đích sẽ thấy" khi đích không phải tổ tiên của nguồn. Thêm chữ đậm "Chuyển sang folder gốc khác" khi khác folder gốc.
+- Tìm folder trong dialog bỏ dấu tiếng Việt ở client ("dich" khớp "Đích").

@@ -4,6 +4,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   DownloadIcon,
+  FolderInputIcon,
   InfoIcon,
   MoreHorizontalIcon,
   PencilIcon,
@@ -38,6 +39,7 @@ export function MediaViewer({
   index,
   onIndexChange,
   onRename,
+  onMove,
   onDelete,
 }: {
   files: FileItem[];
@@ -45,6 +47,7 @@ export function MediaViewer({
   index: number | null;
   onIndexChange: (index: number | null) => void;
   onRename?: (file: FileItem) => void;
+  onMove?: (file: FileItem) => void;
   onDelete?: (file: FileItem) => void;
 }) {
   const file = index === null ? null : files[index];
@@ -120,7 +123,7 @@ export function MediaViewer({
                   <DownloadIcon data-icon="inline-start" />
                   <span className="max-sm:hidden">Tải về</span>
                 </Button>
-                {(onRename || onDelete) && (
+                {(onRename || onMove || onDelete) && (
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       render={<Button variant="outline" size="icon-xl" aria-label="Thêm thao tác" />}
@@ -132,6 +135,12 @@ export function MediaViewer({
                         <DropdownMenuItem onClick={() => onRename(file)}>
                           <PencilIcon />
                           Đổi tên
+                        </DropdownMenuItem>
+                      )}
+                      {onMove && (
+                        <DropdownMenuItem onClick={() => onMove(file)}>
+                          <FolderInputIcon />
+                          Di chuyển
                         </DropdownMenuItem>
                       )}
                       {onDelete && (

@@ -10,6 +10,7 @@ import { renameFile, trashFile } from "@/server/actions";
 import type { FileItem } from "@/server/queries";
 import { ConfirmDialog } from "./confirm-dialog";
 import { FileCard } from "./file-card";
+import { MoveDialog } from "./move-dialog";
 import { NameDialog } from "./name-dialog";
 import { ShareFilesDialog } from "./share-links";
 import { backfillThumbnail } from "./thumbnail-backfill";
@@ -26,12 +27,15 @@ const EMPTY_LABEL: Record<Filter, string> = {
 export function FileGrid({
   files,
   canEdit,
+  folderId,
   shareFolderId,
   folderName,
   initialFileId,
 }: {
   files: FileItem[];
   canEdit: boolean;
+  /** The folder the files sit in; with `canEdit`, lets them move elsewhere. */
+  folderId?: string;
   /** Lets the user pick files and share them by link (they live in this folder). */
   shareFolderId?: string;
   folderName: string;
@@ -44,6 +48,8 @@ export function FileGrid({
   );
   const [renaming, setRenaming] = useState<FileItem | null>(null);
   const [deleting, setDeleting] = useState<FileItem | null>(null);
+  const [moving, setMoving] = useState<FileItem | null>(null);
+  const canMove = canEdit && folderId !== undefined;
   // Null when not picking files to share.
   const [selected, setSelected] = useState<Set<string> | null>(null);
   // "done" once the link exists: closing the dialog then ends the selection.
@@ -151,6 +157,7 @@ export function FileGrid({
               selected={selected ? selected.has(f.id) : undefined}
               onOpen={() => (selected ? toggle(f.id) : setPreviewId(f.id))}
               onRename={canEdit ? () => setRenaming(f) : undefined}
+              onMove={canMove ? () => setMoving(f) : undefined}
               onDelete={canEdit ? () => setDeleting(f) : undefined}
             />
           ))}
@@ -163,6 +170,7 @@ export function FileGrid({
         index={previewIndex === -1 ? null : previewIndex}
         onIndexChange={(i) => setPreviewId(i === null ? null : visible[i].id)}
         onRename={canEdit ? (f) => setRenaming(f) : undefined}
+        onMove={canMove ? (f) => setMoving(f) : undefined}
         onDelete={canEdit ? (f) => setDeleting(f) : undefined}
       />
 
@@ -205,6 +213,15 @@ export function FileGrid({
           submitLabel="Lưu"
           defaultValue={renaming.name}
           onSubmit={(name) => renameFile(renaming.id, name)}
+        />
+      )}
+      {moving && folderId && (
+        <MoveDialog
+          open
+          // Like trashing: the viewer moves on once the file drops out of the list.
+          onOpenChange={(open) => !open && setMoving(null)}
+          items={{ kind: "files", ids: [moving.id], label: `“${moving.name}”` }}
+          sourceFolderId={folderId}
         />
       )}
       {deleting && (

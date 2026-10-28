@@ -6,6 +6,7 @@ import { renameFolder, trashFolder } from "@/server/actions";
 import type { FolderStats } from "@/server/queries";
 import { ConfirmDialog } from "./confirm-dialog";
 import { FolderCard, SubfolderCard } from "./folder-card";
+import { MoveDialog } from "./move-dialog";
 import { NameDialog } from "./name-dialog";
 import { ShareDialog } from "./share-dialog";
 
@@ -13,6 +14,8 @@ type GridFolder = { id: string; name: string; role: FolderRole } & FolderStats;
 
 const can = {
   rename: (role: FolderRole) => role !== "viewer",
+  // Top-level folders stay put: their own grants make up a shared space.
+  move: (role: FolderRole, isRoot: boolean) => !isRoot && role !== "viewer",
   // Editors may hand out public links; only owners manage members.
   share: (role: FolderRole) => role !== "viewer",
   // Top-level folders are shared spaces, so only owners may remove them.
@@ -22,13 +25,17 @@ const can = {
 export function FolderGrid({
   folders,
   isRoot,
+  parentId,
   currentUserId,
 }: {
   folders: GridFolder[];
   isRoot: boolean;
+  /** The folder these subfolders sit in (none for library roots). */
+  parentId?: string;
   currentUserId: string;
 }) {
   const [renaming, setRenaming] = useState<GridFolder | null>(null);
+  const [moving, setMoving] = useState<GridFolder | null>(null);
   const [sharing, setSharing] = useState<GridFolder | null>(null);
   const [deleting, setDeleting] = useState<GridFolder | null>(null);
   // Library roots get cover cards; subfolders inside a folder get compact rows.
@@ -48,6 +55,7 @@ export function FolderGrid({
             key={f.id}
             folder={f}
             onRename={can.rename(f.role) ? () => setRenaming(f) : undefined}
+            onMove={parentId && can.move(f.role, isRoot) ? () => setMoving(f) : undefined}
             onShare={can.share(f.role) ? () => setSharing(f) : undefined}
             onDelete={can.delete(f.role, isRoot) ? () => setDeleting(f) : undefined}
           />
@@ -62,6 +70,14 @@ export function FolderGrid({
           submitLabel="Lưu"
           defaultValue={renaming.name}
           onSubmit={(name) => renameFolder(renaming.id, name)}
+        />
+      )}
+      {moving && parentId && (
+        <MoveDialog
+          open
+          onOpenChange={(open) => !open && setMoving(null)}
+          items={{ kind: "folder", id: moving.id, name: moving.name }}
+          sourceFolderId={parentId}
         />
       )}
       {sharing && (

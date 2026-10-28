@@ -105,6 +105,7 @@ export default async function FolderPage(props: PageProps<"/f/[folderId]">) {
             <FolderGrid
               folders={view.subfolders.map((f) => ({ ...f, role: view.role }))}
               isRoot={false}
+              parentId={view.folder.id}
               currentUserId={session.user.id}
             />
           </section>
@@ -115,6 +116,7 @@ export default async function FolderPage(props: PageProps<"/f/[folderId]">) {
             <FileGrid
               files={view.files}
               canEdit={canEdit}
+              folderId={view.folder.id}
               shareFolderId={canEdit ? view.folder.id : undefined}
               folderName={view.folder.name}
               initialFileId={typeof file === "string" ? file : undefined}
