@@ -17,3 +17,4 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - DB driver is `neon-http`: no interactive transactions; use `db.batch([...])` for atomic multi-statement writes.
 - Verify with `pnpm typecheck && pnpm lint && pnpm build`.
 - Git flow: branch features/fixes off `develop` and open PRs into `develop` (`gh pr create --base develop`). Only `develop` is merged into `main` (release PR). Never PR a feature branch straight into `main`.
+- Releases: the release PR (develop → main) bumps `version` in `package.json` and adds an entry at the top of `RELEASES` in `src/lib/releases.ts` (shown at `/releases`).

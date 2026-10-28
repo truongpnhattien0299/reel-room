@@ -7,6 +7,7 @@ import {
   LogOutIcon,
   PlusIcon,
   ShieldIcon,
+  SparklesIcon,
   UserRoundIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -48,10 +49,12 @@ export function AppSidebar({
   rootFolders,
   user,
   isAdmin,
+  version,
 }: {
   rootFolders: FolderSummary[];
   user: { id: string; name: string; email: string; image: string | null };
   isAdmin: boolean;
+  version: string;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -181,6 +184,11 @@ export function AppSidebar({
             <DropdownMenuItem render={<Link href="/profile" />}>
               <UserRoundIcon />
               Hồ sơ của tôi
+            </DropdownMenuItem>
+            <DropdownMenuItem render={<Link href="/releases" />}>
+              <SparklesIcon />
+              Có gì mới
+              <span className="ml-auto font-mono text-xs text-muted-foreground">v{version}</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={async () => {
