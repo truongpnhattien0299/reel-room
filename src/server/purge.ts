@@ -2,7 +2,9 @@ import "server-only";
 import { eq, inArray, like, or } from "drizzle-orm";
 import { db } from "@/db";
 import { files, folders } from "@/db/schema";
+import type { Session } from "@/lib/auth";
 import { deleteObject } from "@/lib/r2";
+import { logActivity, someNames } from "@/server/activity";
 
 type StoredFile = { id: string; r2Key: string; thumbKey: string | null };
 
@@ -39,4 +41,41 @@ export async function purgeFolderTree(path: string) {
   ]);
   await deleteStoredObjects(removedFiles);
   return removedFiles.length;
+}
+
+type PurgeFolder = { id: string; path: string; name: string };
+type PurgeFile = { id: string; name: string; folder: PurgeFolder };
+
+const within = (path: string, root: string) => path === root || path.startsWith(`${root}/`);
+
+/**
+ * Permanently removes trashed folders (with their subtrees) and files, and
+ * logs it (`actor` null for the cron). Items inside another folder being
+ * purged are skipped: that folder's purge already takes them.
+ */
+export async function purgeTrashed(
+  actor: Session | null,
+  items: { folders: PurgeFolder[]; files: PurgeFile[] },
+) {
+  const roots: PurgeFolder[] = [];
+  for (const f of [...items.folders].sort((a, b) => a.path.length - b.path.length)) {
+    if (!roots.some((r) => within(f.path, r.path))) roots.push(f);
+  }
+  const loose = items.files.filter((f) => !roots.some((r) => within(f.folder.path, r.path)));
+
+  let purgedFiles = 0;
+  for (const folder of roots) {
+    purgedFiles += await purgeFolderTree(folder.path);
+    await logActivity(actor, "folder.purge", { folder, meta: { name: folder.name } });
+  }
+  purgedFiles += await purgeFiles(loose.map((f) => f.id));
+  for (const group of Map.groupBy(loose, (f) => f.folder.id).values()) {
+    const { folder } = group[0];
+    const names = group.map((f) => f.name);
+    await logActivity(actor, "file.purge", {
+      folder,
+      meta: { names: someNames(names), count: names.length, folderName: folder.name },
+    });
+  }
+  return { folders: roots.length, files: purgedFiles };
 }

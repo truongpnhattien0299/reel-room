@@ -4,8 +4,8 @@ import { db } from "@/db";
 import { activity, files, folders, invitations, shareLinks } from "@/db/schema";
 import { deleteObject, thumbKey } from "@/lib/r2";
 import { TRASH_RETENTION_DAYS } from "@/lib/trash";
-import { ACTIVITY_RETENTION_DAYS, logActivity, someNames } from "@/server/activity";
-import { purgeFiles, purgeFolderTree } from "@/server/purge";
+import { ACTIVITY_RETENTION_DAYS } from "@/server/activity";
+import { purgeTrashed } from "@/server/purge";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -47,28 +47,14 @@ export async function GET(req: Request) {
         or(isNull(parent.id), isNull(parent.deletedAt)),
       ),
     );
-  let purgedFiles = 0;
-  for (const f of expiredFolders) {
-    purgedFiles += await purgeFolderTree(f.path);
-    await logActivity(null, "folder.purge", { folder: f, meta: { name: f.name } });
-  }
 
-  // Files trashed on their own.
+  // Files trashed on their own (those inside a purged folder go with it).
   const expiredFiles = await db
     .select({ id: files.id, name: files.name, folder: { id: folders.id, path: folders.path, name: folders.name } })
     .from(files)
     .innerJoin(folders, eq(folders.id, files.folderId))
     .where(and(isNotNull(files.deletedAt), lt(files.deletedAt, cutoff)));
-  purgedFiles += await purgeFiles(expiredFiles.map((f) => f.id));
-  const byFolder = Map.groupBy(expiredFiles, (f) => f.folder.id);
-  for (const group of byFolder.values()) {
-    const { folder } = group[0];
-    const names = group.map((f) => f.name);
-    await logActivity(null, "file.purge", {
-      folder,
-      meta: { names: someNames(names), count: names.length, folderName: folder.name },
-    });
-  }
+  const purged = await purgeTrashed(null, { folders: expiredFolders, files: expiredFiles });
 
   const oldActivity = await db
     .delete(activity)
@@ -90,7 +76,7 @@ export async function GET(req: Request) {
     expiredActivity: oldActivity.length,
     expiredInvites: expiredInvites.length,
     expiredLinks: expiredLinks.length,
-    purgedFolders: expiredFolders.length,
-    purgedFiles,
+    purgedFolders: purged.folders,
+    purgedFiles: purged.files,
   });
 }
