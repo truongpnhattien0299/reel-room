@@ -29,6 +29,71 @@ export const releaseDate = (r: Release) => new Date(`${r.date}T12:00:00Z`);
  */
 export const RELEASES: Release[] = [
   {
+    version: "0.3.0",
+    date: "2026-10-28",
+    title: "Sắp xếp thư viện, tải zip và link có mật khẩu",
+    description:
+      "Di chuyển, xoá và tải về nhiều file cùng lúc, sắp xếp theo ý mình, đánh dấu yêu thích. Link chia sẻ có thêm mật khẩu và thống kê; admin xem được dung lượng và nhật ký hoạt động.",
+    changes: [
+      {
+        kind: "feature",
+        text: "Di chuyển file và folder con sang folder khác, chọn đích trong cây folder có tìm kiếm không dấu. Trước khi chuyển, app báo quyền truy cập sẽ thay đổi thế nào.",
+      },
+      {
+        kind: "feature",
+        text: "Chọn nhiều file để di chuyển, tạo link, tải về hoặc xoá cùng lúc. Shift + click chọn một dải, Ctrl/Cmd + A chọn tất cả; xoá nhầm thì bấm \"Hoàn tác\".",
+      },
+      {
+        kind: "feature",
+        text: "Tải cả folder (giữ nguyên folder con) hoặc các file đã chọn thành một file .zip, kể cả từ link chia sẻ công khai. File nén ngay trên trình duyệt, có thanh tiến trình và nút huỷ.",
+      },
+      {
+        kind: "feature",
+        text: "Sắp xếp file theo ngày, tên, dung lượng hoặc thời lượng, và folder theo tên hoặc lần cập nhật gần nhất. Lựa chọn được nhớ trên trình duyệt.",
+      },
+      {
+        kind: "feature",
+        text: "Đánh dấu yêu thích cho file và folder từ thẻ, menu hoặc phím S trong trình xem. Trang \"Yêu thích\" gom tất cả về một chỗ.",
+      },
+      {
+        kind: "feature",
+        text: "Link chia sẻ có thể đặt mật khẩu và tắt tải về. Trang \"Link chia sẻ\" hiện số lượt xem, lần mở gần nhất và số lượt tải.",
+      },
+      {
+        kind: "feature",
+        text: "Cảnh báo khi upload file đã có trong thư viện, kèm chỗ của file cũ; mặc định bỏ qua file trùng, vẫn có thể chọn upload từng file.",
+      },
+      {
+        kind: "feature",
+        text: "Trang \"Dung lượng\" cho admin: dung lượng đang dùng, trong thùng rác, upload theo tháng, theo folder, theo người upload và chi phí ước tính.",
+      },
+      {
+        kind: "feature",
+        text: "Nhật ký hoạt động: admin xem mọi thay đổi (upload, đổi tên, di chuyển, xoá, chia sẻ, tài khoản) và lọc theo người, loại, ngày; chủ folder xem được hoạt động trong folder của mình.",
+      },
+      {
+        kind: "improvement",
+        text: "Sắp xếp theo tên hiểu số trong tên file: IMG_2 đứng trước IMG_10.",
+      },
+      {
+        kind: "improvement",
+        text: "Người chỉ có quyền xem và khách mở link chia sẻ cũng chọn được nhiều file để tải về.",
+      },
+      {
+        kind: "improvement",
+        text: "Nhập sai mật khẩu link 10 lần liên tiếp thì link tạm khoá 15 phút; đổi mật khẩu thì mọi người phải nhập lại.",
+      },
+      {
+        kind: "fix",
+        text: "File cùng thời điểm upload không còn đổi chỗ cho nhau sau khi xoá rồi khôi phục.",
+      },
+      {
+        kind: "fix",
+        text: "Nút \"Tải về\" ở đầu folder giờ cùng kích thước với các nút bên cạnh.",
+      },
+    ],
+  },
+  {
     version: "0.2.0",
     date: "2026-10-28",
     title: "Trình xem media, hồ sơ cá nhân và quản lý link",
