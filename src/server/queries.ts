@@ -180,20 +180,33 @@ export async function listRootFoldersWithStats(session: Session) {
 
 export type LibraryFolder = Awaited<ReturnType<typeof listRootFoldersWithStats>>[number];
 
+const ROLES_AT_LEAST: Record<FolderRole, SQL> = {
+  viewer: sql`('viewer','editor','owner')`,
+  editor: sql`('editor','owner')`,
+  owner: sql`('owner')`,
+};
+
+/**
+ * SQL condition: `userId` holds a grant (of at least `min`) on the folder at
+ * `path` or one of its ancestors. Ignores the admin role.
+ */
+export function hasGrant(userId: SQL | AnyColumn | string, path: SQL | AnyColumn, min: FolderRole) {
+  return sql`exists (
+    select 1 from folder_permissions p
+    join folders g on g.id = p.folder_id
+    where p.user_id = ${userId}
+      and p.role in ${ROLES_AT_LEAST[min]}
+      and (${path} = g.path or ${path} like g.path || '/%')
+  )`;
+}
+
 /**
  * SQL condition: the user holds a grant (of at least `min`) on the folder at
  * `path` or one of its ancestors. Undefined for admins, who see everything.
  */
-function grantedOn(session: Session, path: SQL | AnyColumn, min: "viewer" | "editor" = "viewer") {
+export function grantedOn(session: Session, path: SQL | AnyColumn, min: "viewer" | "editor" = "viewer") {
   if (isAdmin(session)) return undefined;
-  const roles = min === "viewer" ? sql`('viewer','editor','owner')` : sql`('editor','owner')`;
-  return sql`exists (
-    select 1 from folder_permissions p
-    join folders g on g.id = p.folder_id
-    where p.user_id = ${session.user.id}
-      and p.role in ${roles}
-      and (${path} = g.path or ${path} like g.path || '/%')
-  )`;
+  return hasGrant(session.user.id, path, min);
 }
 
 /** Newest files across every folder the user can see. */

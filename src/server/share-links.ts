@@ -4,9 +4,9 @@ import { and, asc, desc, eq, inArray, isNull, like, or, sql } from "drizzle-orm"
 import { cache } from "react";
 import { db } from "@/db";
 import { files, folders, shareLinkFiles, shareLinks, user, type Folder, type ShareLink } from "@/db/schema";
-import type { Session } from "@/lib/auth";
+import { isAdmin, type Session } from "@/lib/auth";
 import { ancestorIds, getUserRole, requireFolderRole, roleAtLeast } from "@/server/permissions";
-import { fileColumns, getFolderStats, toFileItem } from "@/server/queries";
+import { fileColumns, getFolderStats, grantedOn, hasGrant, toFileItem } from "@/server/queries";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOKEN = /^[A-Za-z0-9_-]{20,64}$/;
@@ -156,3 +156,71 @@ export async function listShareLinks(session: Session, folderId: string) {
 }
 
 export type ShareLinkItem = Awaited<ReturnType<typeof listShareLinks>>[number];
+
+export type ShareLinkStatus =
+  | "active"
+  | "expired"
+  | "folder_trashed"
+  | "creator_banned"
+  | "creator_no_access";
+
+/**
+ * Every link in the folders the user can edit (admins: all), with whether it
+ * still works. The status mirrors `resolveShareLink`'s checks, in its order.
+ * `canManage`: the user may change or revoke it (its creator or an owner).
+ */
+export async function listAllShareLinks(session: Session) {
+  const status = sql<ShareLinkStatus>`case
+    when ${folders.deletedAt} is not null then 'folder_trashed'
+    when coalesce(${user.banned}, false) then 'creator_banned'
+    when ${user.role} is distinct from 'admin'
+      and not ${hasGrant(shareLinks.createdBy, folders.path, "editor")} then 'creator_no_access'
+    when ${shareLinks.expiresAt} <= now() then 'expired'
+    else 'active'
+  end`;
+  const canManage = isAdmin(session)
+    ? sql<boolean>`true`
+    : sql<boolean>`(${shareLinks.createdBy} = ${session.user.id} or ${hasGrant(session.user.id, folders.path, "owner")})`;
+
+  return db
+    .select({
+      id: shareLinks.id,
+      token: shareLinks.token,
+      kind: shareLinks.kind,
+      expiresAt: shareLinks.expiresAt,
+      createdAt: shareLinks.createdAt,
+      folder: { id: folders.id, name: folders.name },
+      creator: { id: user.id, name: user.name, image: user.image },
+      fileCount: sql<number>`(select count(*)::int from ${shareLinkFiles} where ${shareLinkFiles.linkId} = ${shareLinks.id})`,
+      status,
+      canManage,
+    })
+    .from(shareLinks)
+    .innerJoin(folders, eq(folders.id, shareLinks.folderId))
+    .innerJoin(user, eq(user.id, shareLinks.createdBy))
+    .where(grantedOn(session, folders.path, "editor"))
+    .orderBy(desc(shareLinks.createdAt));
+}
+
+export type ShareLinkRow = Awaited<ReturnType<typeof listAllShareLinks>>[number];
+
+/** The live files of a "files" link. Editors of its folder only. */
+export async function listShareLinkFiles(session: Session, linkId: string) {
+  if (!UUID.test(linkId)) return [];
+  const [link] = await db
+    .select({ id: shareLinks.id })
+    .from(shareLinks)
+    .innerJoin(folders, eq(folders.id, shareLinks.folderId))
+    .where(and(eq(shareLinks.id, linkId), grantedOn(session, folders.path, "editor")));
+  if (!link) return [];
+  const rows = await db
+    .select(fileColumns)
+    .from(shareLinkFiles)
+    .innerJoin(files, eq(files.id, shareLinkFiles.fileId))
+    .innerJoin(user, eq(user.id, files.uploadedBy))
+    .where(
+      and(eq(shareLinkFiles.linkId, link.id), eq(files.status, "ready"), isNull(files.deletedAt)),
+    )
+    .orderBy(desc(files.createdAt));
+  return rows.map(toFileItem);
+}
