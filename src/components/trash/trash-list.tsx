@@ -7,7 +7,7 @@ import { ConfirmDialog } from "@/components/folders/confirm-dialog";
 import { DurationBadge, MediaThumb } from "@/components/folders/media-thumb";
 import { Button } from "@/components/ui/button";
 import { formatBytes, formatRelative } from "@/lib/format";
-import { isVideo } from "@/lib/media";
+import { mediaKind } from "@/lib/media";
 import { toneFor } from "@/lib/tones";
 import { purgeFile, purgeFolder, restoreFile, restoreFolder } from "@/server/actions";
 import type { TrashItem } from "@/server/queries";
@@ -33,7 +33,7 @@ export function TrashList({ items }: { items: TrashItem[] }) {
           title={`Xoá vĩnh viễn “${purging.name}”?`}
           description={
             purging.kind === "folder"
-              ? "Folder, mọi folder con và toàn bộ ảnh, video bên trong sẽ bị xoá khỏi hệ thống. Không thể hoàn tác."
+              ? "Folder, mọi folder con và toàn bộ file bên trong sẽ bị xoá khỏi hệ thống. Không thể hoàn tác."
               : "File sẽ bị xoá khỏi hệ thống. Không thể hoàn tác."
           }
           confirmLabel="Xoá vĩnh viễn"
@@ -47,6 +47,7 @@ export function TrashList({ items }: { items: TrashItem[] }) {
 }
 
 function TrashRow({ item, onPurge }: { item: TrashItem; onPurge: () => void }) {
+  const kind = item.mimeType ? mediaKind({ mimeType: item.mimeType }) : undefined;
   const [pending, startTransition] = useTransition();
 
   const meta = [
@@ -69,9 +70,9 @@ function TrashRow({ item, onPurge }: { item: TrashItem; onPurge: () => void }) {
           </span>
         ) : (
           <>
-            <MediaThumb id={item.id} hasThumb={item.hasThumb ?? false} />
-            {item.mimeType && isVideo({ mimeType: item.mimeType }) && (
-              <DurationBadge durationMs={null} className="absolute bottom-1 left-1 scale-90" />
+            <MediaThumb id={item.id} hasThumb={item.hasThumb ?? false} kind={kind} />
+            {kind && kind !== "image" && (
+              <DurationBadge durationMs={null} kind={kind} className="absolute bottom-1 left-1 scale-90" />
             )}
           </>
         )}

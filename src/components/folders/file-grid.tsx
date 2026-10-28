@@ -3,18 +3,25 @@
 import { Link2Icon, ListChecksIcon, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { isVideo } from "@/lib/media";
+import { MediaViewer } from "@/components/viewer/media-viewer";
+import { type MediaKind, mediaKind } from "@/lib/media";
 import { cn } from "@/lib/utils";
 import { renameFile, trashFile } from "@/server/actions";
 import type { FileItem } from "@/server/queries";
 import { ConfirmDialog } from "./confirm-dialog";
 import { FileCard } from "./file-card";
-import { MediaPreview } from "./media-preview";
 import { NameDialog } from "./name-dialog";
 import { ShareFilesDialog } from "./share-links";
 import { backfillThumbnail } from "./thumbnail-backfill";
 
-type Filter = "all" | "image" | "video";
+type Filter = "all" | MediaKind;
+
+const EMPTY_LABEL: Record<Filter, string> = {
+  all: "file",
+  image: "ảnh",
+  video: "video",
+  audio: "audio",
+};
 
 export function FileGrid({
   files,
@@ -42,16 +49,17 @@ export function FileGrid({
   // "done" once the link exists: closing the dialog then ends the selection.
   const [sharing, setSharing] = useState<"open" | "done" | null>(null);
 
-  const videoCount = files.filter(isVideo).length;
-  const counts = { all: files.length, image: files.length - videoCount, video: videoCount };
-  const visible =
-    filter === "all" ? files : files.filter((f) => (filter === "video") === isVideo(f));
+  const counts: Record<Filter, number> = { all: files.length, image: 0, video: 0, audio: 0 };
+  for (const f of files) counts[mediaKind(f)]++;
+  const visible = filter === "all" ? files : files.filter((f) => mediaKind(f) === filter);
   const previewIndex = previewId ? visible.findIndex((f) => f.id === previewId) : -1;
   const previewFile = previewIndex === -1 ? null : visible[previewIndex];
 
   // Opening a file whose thumbnail got lost at upload makes one for the grid.
   useEffect(() => {
-    if (canEdit && previewFile && !previewFile.hasThumb) void backfillThumbnail(previewFile);
+    if (canEdit && previewFile && !previewFile.hasThumb && mediaKind(previewFile) !== "audio") {
+      void backfillThumbnail(previewFile);
+    }
   }, [canEdit, previewFile]);
 
   // Files that left the folder (trashed elsewhere) drop out of the selection.
@@ -78,6 +86,7 @@ export function FileGrid({
     { value: "all", label: "Tất cả" },
     { value: "image", label: "Ảnh" },
     { value: "video", label: "Video" },
+    { value: "audio", label: "Audio" },
   ];
 
   return (
@@ -131,7 +140,7 @@ export function FileGrid({
 
       {visible.length === 0 ? (
         <p className="py-10 text-center text-muted-foreground">
-          Không có {filter === "video" ? "video" : "ảnh"} nào trong folder này.
+          Không có {EMPTY_LABEL[filter]} nào trong folder này.
         </p>
       ) : (
         <div className="columns-2 gap-3.5 sm:columns-[220px]">
@@ -148,7 +157,7 @@ export function FileGrid({
         </div>
       )}
 
-      <MediaPreview
+      <MediaViewer
         files={visible}
         folderName={folderName}
         index={previewIndex === -1 ? null : previewIndex}

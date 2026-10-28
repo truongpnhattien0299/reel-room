@@ -5,6 +5,11 @@ export const thumbUrl = (id: string) => `/api/files/${id}/thumb`;
 /** Uncached original, readable by a canvas (to make a missing thumbnail). */
 export const thumbSourceUrl = (id: string) => `/api/files/${id}/content?fresh=1`;
 export const isVideo = (file: { mimeType: string }) => file.mimeType.startsWith("video/");
+export const isAudio = (file: { mimeType: string }) => file.mimeType.startsWith("audio/");
+
+export type MediaKind = "image" | "video" | "audio";
+export const mediaKind = (file: { mimeType: string }): MediaKind =>
+  isVideo(file) ? "video" : isAudio(file) ? "audio" : "image";
 
 export type MediaUrls = {
   content: (id: string) => string;

@@ -2,7 +2,7 @@
 
 import { CheckIcon, DownloadIcon, PencilIcon, Trash2Icon } from "lucide-react";
 import { formatBytes } from "@/lib/format";
-import { isVideo } from "@/lib/media";
+import { mediaKind } from "@/lib/media";
 import { cn } from "@/lib/utils";
 import type { FileItem } from "@/server/queries";
 import { ItemWithMenu, type MenuAction } from "./item-menu";
@@ -37,6 +37,7 @@ export function FileCard({
     }
   }
 
+  const kind = mediaKind(file);
   const ratio = file.width && file.height ? `${file.width} / ${file.height}` : "1 / 1";
 
   return (
@@ -58,6 +59,7 @@ export function FileCard({
           <MediaThumb
             id={file.id}
             hasThumb={file.hasThumb}
+            kind={kind}
             className={cn("transition-transform duration-200", selected && "scale-[0.94] rounded-lg")}
           />
           {selecting && (
@@ -73,8 +75,12 @@ export function FileCard({
               {selected && <CheckIcon className="size-4" strokeWidth={3} />}
             </span>
           )}
-          {isVideo(file) && (
-            <DurationBadge durationMs={file.durationMs} className="absolute bottom-2.5 left-2.5" />
+          {kind !== "image" && (
+            <DurationBadge
+              durationMs={file.durationMs}
+              kind={kind}
+              className="absolute bottom-2.5 left-2.5"
+            />
           )}
         </span>
         <span className="flex justify-between gap-2 px-0.5 pt-2 text-xs">

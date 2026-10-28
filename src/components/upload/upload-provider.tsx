@@ -191,7 +191,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       const accepted = input.filter((f) => isMediaType(f.type) && f.size > 0 && f.size <= MAX_FILE_SIZE);
       const skipped = input.length - accepted.length;
       if (skipped > 0) {
-        toast.warning(`Bỏ qua ${skipped} file không phải ảnh/video hoặc lớn hơn 5GB`);
+        toast.warning(`Bỏ qua ${skipped} file không phải ảnh/video/audio hoặc lớn hơn 5GB`);
       }
 
       for (let i = 0; i < accepted.length; i += MAX_FILES_PER_BATCH) {

@@ -5,6 +5,7 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   ImageIcon,
+  MusicIcon,
   PlayIcon,
   RotateCwIcon,
   XIcon,
@@ -100,7 +101,11 @@ function UploadRow({
   onRetry: (id: string) => void;
 }) {
   const percent = item.size ? (item.bytesUploaded / item.size) * 100 : 0;
-  const Icon = /\.(mp4|mov|webm|mkv|avi|m4v)$/i.test(item.name) ? PlayIcon : ImageIcon;
+  const Icon = /\.(mp4|mov|webm|mkv|avi|m4v)$/i.test(item.name)
+    ? PlayIcon
+    : /\.(mp3|m4a|aac|wav|flac|ogg|oga|opus|weba)$/i.test(item.name)
+      ? MusicIcon
+      : ImageIcon;
   return (
     <li className="flex items-center gap-3">
       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#2a2e37] text-muted-foreground">

@@ -104,3 +104,15 @@
     @apply font-sans;
   }
 }
+
+/* Double-tap seek feedback in the video player. */
+@keyframes viewer-ripple {
+  from {
+    opacity: 1;
+    scale: 0.8;
+  }
+  to {
+    opacity: 0;
+    scale: 1.15;
+  }
+}

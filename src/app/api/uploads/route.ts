@@ -13,7 +13,7 @@ const bodySchema = z.object({
       z.object({
         name: z.string().trim().min(1).max(255),
         size: z.number().int().positive().max(MAX_FILE_SIZE, "File vượt quá 5GB"),
-        type: z.string().refine(isMediaType, "Chỉ hỗ trợ ảnh và video"),
+        type: z.string().refine(isMediaType, "Chỉ hỗ trợ ảnh, video và audio"),
       }),
     )
     .min(1)
