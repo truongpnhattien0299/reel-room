@@ -27,7 +27,7 @@ export function ConfirmDialog({
   title: string;
   description: string;
   confirmLabel: string;
-  onConfirm: () => Promise<ActionResult>;
+  onConfirm: () => Promise<ActionResult<unknown>>;
 }) {
   const [pending, startTransition] = useTransition();
   return (

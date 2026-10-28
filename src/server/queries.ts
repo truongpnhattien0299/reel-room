@@ -405,6 +405,8 @@ export type TrashItem = {
   deletedByName: string | null;
   /** Whole days until the cron purges it (0 = today). */
   daysLeft: number;
+  /** May restore or purge it: a top-level folder needs owner, the rest editor. */
+  canManage: boolean;
   mimeType?: string;
   hasThumb?: boolean;
   size?: number;
@@ -424,6 +426,9 @@ export async function listTrash(session: Session): Promise<TrashItem[]> {
         location: parentFolder.name,
         deletedAt: folders.deletedAt,
         deletedByName: deleter.name,
+        canManage: isAdmin(session)
+          ? sql<boolean>`true`
+          : sql<boolean>`(${folders.parentId} is not null or ${hasGrant(session.user.id, folders.path, "owner")})`,
       })
       .from(folders)
       .leftJoin(parentFolder, eq(parentFolder.id, folders.parentId))
@@ -474,6 +479,7 @@ export async function listTrash(session: Session): Promise<TrashItem[]> {
       kind: "file" as const,
       deletedAt: f.deletedAt!,
       daysLeft: daysLeft(f.deletedAt!),
+      canManage: true,
       hasThumb: thumbKey !== null,
     })),
   ].sort((a, b) => b.deletedAt.getTime() - a.deletedAt.getTime());
