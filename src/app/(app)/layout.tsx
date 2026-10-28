@@ -3,6 +3,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { UploadPanel } from "@/components/upload/upload-panel";
 import { UploadProvider } from "@/components/upload/upload-provider";
 import { isAdmin, requireSession } from "@/lib/auth";
+import { CURRENT_VERSION } from "@/lib/releases";
 import { listRootFolders } from "@/server/queries";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
@@ -20,6 +21,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           image: session.user.image ?? null,
         }}
         isAdmin={isAdmin(session)}
+        version={CURRENT_VERSION}
       />
       <UploadProvider>
         <SidebarInset>{children}</SidebarInset>
