@@ -2,6 +2,7 @@
 
 import {
   ChevronsUpDownIcon,
+  HardDriveIcon,
   ImageIcon,
   Link2Icon,
   LogOutIcon,
@@ -107,18 +108,32 @@ export function AppSidebar({
                 </SidebarMenuButton>
               </SidebarMenuItem>
               {isAdmin && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={pathname.startsWith("/admin")}
-                    className={itemClass}
-                    render={<Link href="/admin/users" />}
-                  >
-                    <ShieldIcon
-                      className={pathname.startsWith("/admin") ? "text-primary" : undefined}
-                    />
-                    <span>Quản lý user</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+                <>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={pathname.startsWith("/admin/users")}
+                      className={itemClass}
+                      render={<Link href="/admin/users" />}
+                    >
+                      <ShieldIcon
+                        className={pathname.startsWith("/admin/users") ? "text-primary" : undefined}
+                      />
+                      <span>Quản lý user</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={pathname === "/admin/storage"}
+                      className={itemClass}
+                      render={<Link href="/admin/storage" />}
+                    >
+                      <HardDriveIcon
+                        className={pathname === "/admin/storage" ? "text-primary" : undefined}
+                      />
+                      <span>Dung lượng</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </>
               )}
             </SidebarMenu>
           </SidebarGroupContent>
