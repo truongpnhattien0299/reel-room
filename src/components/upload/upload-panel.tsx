@@ -5,6 +5,7 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   ImageIcon,
+  Loader2Icon,
   MusicIcon,
   PlayIcon,
   RotateCwIcon,
@@ -12,9 +13,15 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { useUploads, type UploadItem } from "./upload-provider";
+import {
+  readSkipDuplicateCheck,
+  useUploads,
+  writeSkipDuplicateCheck,
+  type UploadItem,
+} from "./upload-provider";
 
 function Bar({ value, className }: { value: number; className?: string }) {
   return (
@@ -34,9 +41,9 @@ function Bar({ value, className }: { value: number; className?: string }) {
 }
 
 export function UploadPanel() {
-  const { items, cancel, retry, clearFinished } = useUploads();
+  const { items, checking, cancel, retry, clearFinished } = useUploads();
   const [collapsed, setCollapsed] = useState(false);
-  if (items.length === 0) return null;
+  if (items.length === 0 && checking === 0) return null;
 
   const running = items.filter((it) => it.status === "uploading" || it.status === "finishing");
   const failed = items.filter((it) => it.status === "error").length;
@@ -45,6 +52,8 @@ export function UploadPanel() {
 
   const title = running.length
     ? `Đang upload ${running.length} file`
+    : checking
+      ? "Đang kiểm tra trùng…"
     : failed
       ? `${failed} file lỗi`
       : "Upload hoàn tất";
@@ -72,7 +81,7 @@ export function UploadPanel() {
           >
             {collapsed ? <ChevronUpIcon /> : <ChevronDownIcon />}
           </Button>
-          {running.length === 0 && (
+          {running.length === 0 && checking === 0 && (
             <Button variant="ghost" size="icon" aria-label="Đóng" onClick={clearFinished}>
               <XIcon />
             </Button>
@@ -80,14 +89,39 @@ export function UploadPanel() {
         </div>
       </div>
       {running.length > 0 && <Bar value={total ? (sent / total) * 100 : 0} />}
-      {!collapsed && (
+      {!collapsed && checking > 0 && (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2Icon className="size-3.5 animate-spin" aria-hidden="true" />
+          Đang kiểm tra {checking} file có trùng với file đã có không…
+        </p>
+      )}
+      {!collapsed && items.length > 0 && (
         <ul className="-mr-2 flex max-h-72 flex-col gap-3 overflow-y-auto pr-2">
           {items.map((it) => (
             <UploadRow key={it.id} item={it} onCancel={cancel} onRetry={retry} />
           ))}
         </ul>
       )}
+      {!collapsed && <SkipCheckToggle />}
     </aside>
+  );
+}
+
+/** Opt-out for people uploading huge batches; remembered per browser. */
+function SkipCheckToggle() {
+  const [skip, setSkip] = useState(readSkipDuplicateCheck);
+  return (
+    <label className="-mb-1 flex items-center justify-between gap-3 border-t border-[#2a2e37] pt-3 text-xs text-muted-foreground">
+      Không kiểm tra file trùng
+      <Switch
+        size="sm"
+        checked={skip}
+        onCheckedChange={(on) => {
+          setSkip(on);
+          writeSkipDuplicateCheck(on);
+        }}
+      />
+    </label>
   );
 }
 

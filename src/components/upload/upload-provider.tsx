@@ -13,7 +13,16 @@ import {
   useState,
 } from "react";
 import { toast } from "sonner";
-import { isMediaType, MAX_FILE_SIZE, MAX_FILES_PER_BATCH } from "@/lib/upload-limits";
+import {
+  isMediaType,
+  MAX_CHECK_ITEMS,
+  MAX_FILE_SIZE,
+  MAX_FILES_PER_BATCH,
+  MAX_HASH_SIZE,
+} from "@/lib/upload-limits";
+import type { DuplicateResult } from "@/server/duplicates";
+import { DuplicateDialog, type DuplicateReview } from "./duplicate-dialog";
+import { hashFile } from "./hash";
 import { extractMediaInfo, type MediaInfo, uploadThumbnailBlob } from "./thumbnail";
 
 /**
@@ -38,6 +47,8 @@ export type UploadItem = {
 
 type UploadContextValue = {
   items: UploadItem[];
+  /** Files still being checked for duplicates before they're uploaded. */
+  checking: number;
   addFiles: (folderId: string, files: File[]) => Promise<void>;
   cancel: (id: string) => void;
   retry: (id: string) => void;
@@ -54,6 +65,24 @@ export function useUploads() {
 
 const CHUNK_SIZE = 16 * 1024 * 1024;
 
+/** localStorage flag: upload without looking for duplicates first. */
+export const SKIP_DUPLICATE_CHECK_KEY = "rr_skip_dup_check";
+
+export function readSkipDuplicateCheck() {
+  try {
+    return localStorage.getItem(SKIP_DUPLICATE_CHECK_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function writeSkipDuplicateCheck(skip: boolean) {
+  try {
+    if (skip) localStorage.setItem(SKIP_DUPLICATE_CHECK_KEY, "1");
+    else localStorage.removeItem(SKIP_DUPLICATE_CHECK_KEY);
+  } catch {}
+}
+
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
     method: "POST",
@@ -63,6 +92,28 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
   return data as T;
+}
+
+// Hashes computed while checking for duplicates, reused when uploading.
+const knownHashes = new WeakMap<File, string>();
+
+async function sha256Of(file: File) {
+  const known = knownHashes.get(file);
+  if (known || file.size > MAX_HASH_SIZE) return known;
+  return hashFile(file).catch(() => undefined);
+}
+
+/** Asks the server about `entries`, in as many calls as it takes. */
+async function checkDuplicates(entries: { key: string; file: File; sha256?: string }[]) {
+  const results: Record<string, DuplicateResult> = {};
+  for (let i = 0; i < entries.length; i += MAX_CHECK_ITEMS) {
+    const items = entries
+      .slice(i, i + MAX_CHECK_ITEMS)
+      .map(({ key, file, sha256 }) => ({ key, size: file.size, name: file.name, sha256 }));
+    const res = await postJson<{ results: Record<string, DuplicateResult> }>("/api/uploads/check", { items });
+    Object.assign(results, res.results);
+  }
+  return results;
 }
 
 /** Thumbnail goes straight to R2 through the same signing endpoint. */
@@ -79,8 +130,13 @@ async function uploadThumbnail(fileId: string, info: MediaInfo) {
 export function UploadProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [items, setItems] = useState<UploadItem[]>([]);
-  // Per-file promise resolving once its thumbnail is uploaded (or skipped).
-  const sideTasks = useRef(new Map<string, Promise<{ info: MediaInfo; hasThumb: boolean }>>());
+  const [checking, setChecking] = useState(0);
+  const [reviews, setReviews] = useState<DuplicateReview[]>([]);
+  // Per-file promise resolving once its thumbnail is uploaded (or skipped)
+  // and its hash is known (or given up on).
+  const sideTasks = useRef(
+    new Map<string, Promise<{ info: MediaInfo; hasThumb: boolean; sha256?: string }>>(),
+  );
 
   const patch = useCallback((id: string, update: Partial<UploadItem>) => {
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...update } : it)));
@@ -123,12 +179,13 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     async (id: string) => {
       patch(id, { status: "finishing", error: undefined });
       try {
-        const { info, hasThumb } = (await sideTasks.current.get(id)) ?? {
+        const { info, hasThumb, sha256 } = (await sideTasks.current.get(id)) ?? {
           info: { thumb: null },
           hasThumb: false,
         };
         await postJson(`/api/uploads/${id}/complete`, {
           hasThumb,
+          sha256,
           width: info.width,
           height: info.height,
           durationMs: info.durationMs,
@@ -186,14 +243,9 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("beforeunload", warn);
   }, [active]);
 
-  const addFiles = useCallback(
-    async (folderId: string, input: File[]) => {
-      const accepted = input.filter((f) => isMediaType(f.type) && f.size > 0 && f.size <= MAX_FILE_SIZE);
-      const skipped = input.length - accepted.length;
-      if (skipped > 0) {
-        toast.warning(`Bỏ qua ${skipped} file không phải ảnh/video/audio hoặc lớn hơn 5GB`);
-      }
-
+  const startUploads = useCallback(
+    async (folderId: string, accepted: File[]) => {
+      if (accepted.length === 0) return;
       for (let i = 0; i < accepted.length; i += MAX_FILES_PER_BATCH) {
         const batch = accepted.slice(i, i + MAX_FILES_PER_BATCH);
         let registered: { fileId: string; key: string }[];
@@ -226,10 +278,14 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
           const { fileId } = registered[j];
           sideTasks.current.set(
             fileId,
-            extractMediaInfo(file).then(async (info) => ({
-              info,
-              hasThumb: await uploadThumbnail(fileId, info),
-            })),
+            Promise.all([
+              extractMediaInfo(file).then(async (info) => ({
+                info,
+                hasThumb: await uploadThumbnail(fileId, info),
+              })),
+              // Stored so a later upload of the same bytes is caught for sure.
+              sha256Of(file),
+            ]).then(([media, sha256]) => ({ ...media, sha256 })),
           );
         });
 
@@ -247,6 +303,72 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       void uppy.upload();
     },
     [uppy],
+  );
+
+  const reviewId = useRef(0);
+
+  /**
+   * Uploads right away whatever can't be a duplicate; the rest is hashed
+   * (only files the same size as one already there) and, if it still
+   * matches, held for the duplicate dialog.
+   */
+  const addFiles = useCallback(
+    async (folderId: string, input: File[]) => {
+      const accepted = input.filter((f) => isMediaType(f.type) && f.size > 0 && f.size <= MAX_FILE_SIZE);
+      const skipped = input.length - accepted.length;
+      if (skipped > 0) {
+        toast.warning(`Bỏ qua ${skipped} file không phải ảnh/video/audio hoặc lớn hơn 5GB`);
+      }
+      if (accepted.length === 0) return;
+      if (readSkipDuplicateCheck()) return startUploads(folderId, accepted);
+
+      const entries = accepted.map((file, i) => ({ key: String(i), file }));
+      let pending = entries;
+      setChecking((n) => n + entries.length);
+      const settle = (done: number) => setChecking((n) => n - done);
+      try {
+        const bySize = await checkDuplicates(entries);
+        const clear = entries.filter((e) => !bySize[e.key].needsHash);
+        pending = entries.filter((e) => bySize[e.key].needsHash);
+        settle(clear.length);
+        void startUploads(folderId, clear.map((e) => e.file));
+        if (pending.length === 0) return;
+
+        const hashed = [];
+        for (const e of pending) hashed.push({ ...e, sha256: await sha256Of(e.file) });
+        for (const e of hashed) if (e.sha256) knownHashes.set(e.file, e.sha256);
+        const byHash = await checkDuplicates(hashed);
+        const fresh = pending.filter((e) => byHash[e.key].matches.length === 0);
+        const dupes = pending.filter((e) => byHash[e.key].matches.length > 0);
+        void startUploads(folderId, fresh.map((e) => e.file));
+        if (dupes.length) {
+          setReviews((prev) => [
+            ...prev,
+            {
+              id: ++reviewId.current,
+              folderId,
+              entries: dupes.map((e) => ({ file: e.file, matches: byHash[e.key].matches })),
+            },
+          ]);
+        }
+      } catch {
+        // The check is only a hint; never let it block an upload.
+        void startUploads(folderId, pending.map((e) => e.file));
+      } finally {
+        settle(pending.length);
+      }
+    },
+    [startUploads],
+  );
+
+  const resolveReview = useCallback(
+    (review: DuplicateReview, upload: File[]) => {
+      setReviews((prev) => prev.filter((r) => r.id !== review.id));
+      const skippedCount = review.entries.length - upload.length;
+      if (skippedCount > 0) toast(`Đã bỏ qua ${skippedCount} file trùng`);
+      void startUploads(review.folderId, upload);
+    },
+    [startUploads],
   );
 
   const cancel = useCallback(
@@ -279,9 +401,17 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ items, addFiles, cancel, retry, clearFinished }),
-    [items, addFiles, cancel, retry, clearFinished],
+    () => ({ items, checking, addFiles, cancel, retry, clearFinished }),
+    [items, checking, addFiles, cancel, retry, clearFinished],
   );
 
-  return <UploadContext.Provider value={value}>{children}</UploadContext.Provider>;
+  const review = reviews[0];
+  return (
+    <UploadContext.Provider value={value}>
+      {children}
+      {review && (
+        <DuplicateDialog key={review.id} review={review} onResolve={(files) => resolveReview(review, files)} />
+      )}
+    </UploadContext.Provider>
+  );
 }

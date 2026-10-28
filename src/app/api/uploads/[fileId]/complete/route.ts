@@ -12,6 +12,7 @@ const bodySchema = z.object({
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
   durationMs: z.number().int().nonnegative().optional(),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
 });
 
 /** Marks a file ready once its object is confirmed to be in R2. */
@@ -49,6 +50,7 @@ export const POST = withSession(async (req, session, ctx: RouteContext<"/api/upl
         width: body.width,
         height: body.height,
         durationMs: body.durationMs,
+        sha256: body.sha256,
       })
       .where(eq(files.id, file.id)),
     logActivity(session, "file.upload", {
