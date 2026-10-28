@@ -17,7 +17,7 @@ export function DownloadFolderButton({
   return (
     <Button
       variant="outline"
-      size="lg"
+      size="xl"
       onClick={() => void startZipDownload(urls.zip, { folderId: folder.id }, `${folder.name}.zip`)}
     >
       <DownloadIcon data-icon="inline-start" />
