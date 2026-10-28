@@ -5,18 +5,22 @@ import {
   CheckIcon,
   ChevronDownIcon,
   CopyIcon,
+  DownloadIcon,
   FolderIcon,
   ImagesIcon,
+  KeyRoundIcon,
+  LockOpenIcon,
   MoreHorizontalIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import { absoluteUrl, useCopy } from "@/components/copy-link";
 import { ConfirmDialog } from "@/components/folders/confirm-dialog";
-import { expiryText } from "@/components/folders/share-links";
-import { ExpiryDialog } from "@/components/links/expiry-dialog";
+import { DOWNLOAD_NOTE, expiryText, LinkFlags } from "@/components/folders/share-links";
+import { type LinkSetting, LinkSettingsDialog } from "@/components/links/link-settings-dialog";
 import { LinkFiles } from "@/components/links/link-files";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,7 +34,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { shareLinkPath } from "@/lib/media";
 import { cn } from "@/lib/utils";
-import { deleteShareLinks } from "@/server/actions";
+import { deleteShareLinks, updateShareLink } from "@/server/actions";
 import type { ShareLinkRow, ShareLinkStatus } from "@/server/share-links";
 
 type Filter = "all" | "active" | "expired" | "dead";
@@ -59,7 +63,7 @@ export function ShareLinkList({ links, currentUserId }: { links: ShareLinkRow[];
   const [mine, setMine] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [revoking, setRevoking] = useState<Revoking | null>(null);
-  const [editing, setEditing] = useState<ShareLinkRow | null>(null);
+  const [editing, setEditing] = useState<{ link: ShareLinkRow; setting: LinkSetting } | null>(null);
 
   const scoped = mine ? links.filter((l) => l.creator.id === currentUserId) : links;
   const counts: Record<Filter, number> = { all: scoped.length, active: 0, expired: 0, dead: 0 };
@@ -146,7 +150,7 @@ export function ShareLinkList({ links, currentUserId }: { links: ShareLinkRow[];
               isMine={l.creator.id === currentUserId}
               selected={selected.has(l.id)}
               onToggle={() => toggle(l.id)}
-              onEditExpiry={() => setEditing(l)}
+              onEdit={(setting) => setEditing({ link: l, setting })}
               onRevoke={() => setRevoking({ ids: [l.id], title: "Thu hồi link này?" })}
             />
           ))}
@@ -192,7 +196,13 @@ export function ShareLinkList({ links, currentUserId }: { links: ShareLinkRow[];
           }}
         />
       )}
-      {editing && <ExpiryDialog link={editing} onOpenChange={(open) => !open && setEditing(null)} />}
+      {editing && (
+        <LinkSettingsDialog
+          link={editing.link}
+          setting={editing.setting}
+          onOpenChange={(open) => !open && setEditing(null)}
+        />
+      )}
     </>
   );
 }
@@ -202,17 +212,24 @@ function LinkRow({
   isMine,
   selected,
   onToggle,
-  onEditExpiry,
+  onEdit,
   onRevoke,
 }: {
   link: ShareLinkRow;
   isMine: boolean;
   selected: boolean;
   onToggle: () => void;
-  onEditExpiry: () => void;
+  onEdit: (setting: LinkSetting) => void;
   onRevoke: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const update = (input: Parameters<typeof updateShareLink>[1], done: string) =>
+    startTransition(async () => {
+      const res = await updateShareLink(link.id, input);
+      if (res.error) toast.error(res.error);
+      else toast.success(done);
+    });
   const { copied, copy } = useCopy();
   const url = () => absoluteUrl(shareLinkPath(link.token));
   const Icon = link.kind === "folder" ? FolderIcon : ImagesIcon;
@@ -250,6 +267,7 @@ function LinkRow({
               <span title={formatDateTime(link.createdAt)}>{formatRelative(link.createdAt)}</span>
             </span>
           </p>
+          <LinkStats link={link} />
           <StatusBadge link={link} className="self-start sm:hidden" />
         </div>
         <StatusBadge link={link} className="hidden sm:inline-flex" />
@@ -277,10 +295,38 @@ function LinkRow({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-40">
                 {link.status !== "folder_trashed" && (
-                  <DropdownMenuItem onClick={onEditExpiry}>
-                    <CalendarClockIcon />
-                    Đổi hạn
-                  </DropdownMenuItem>
+                  <>
+                    <DropdownMenuItem onClick={() => onEdit("expiry")}>
+                      <CalendarClockIcon />
+                      Đổi hạn
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onEdit("password")}>
+                      <KeyRoundIcon />
+                      {link.hasPassword ? "Đổi mật khẩu" : "Đặt mật khẩu"}
+                    </DropdownMenuItem>
+                    {link.hasPassword && (
+                      <DropdownMenuItem
+                        disabled={pending}
+                        onClick={() => update({ password: null }, "Đã gỡ mật khẩu")}
+                      >
+                        <LockOpenIcon />
+                        Gỡ mật khẩu
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      disabled={pending}
+                      title={link.allowDownload ? DOWNLOAD_NOTE : undefined}
+                      onClick={() =>
+                        update(
+                          { allowDownload: !link.allowDownload },
+                          link.allowDownload ? "Đã tắt tải về" : "Đã bật tải về",
+                        )
+                      }
+                    >
+                      <DownloadIcon />
+                      {link.allowDownload ? "Tắt tải về" : "Bật tải về"}
+                    </DropdownMenuItem>
+                  </>
                 )}
                 <DropdownMenuItem variant="destructive" onClick={onRevoke}>
                   <XIcon />
@@ -297,6 +343,29 @@ function LinkRow({
         </div>
       )}
     </li>
+  );
+}
+
+/** Password and download marks, then "42 lượt xem · mở gần nhất 2 giờ trước · 5 lượt tải". */
+function LinkStats({ link }: { link: ShareLinkRow }) {
+  const parts =
+    link.viewCount === 0 && link.downloadCount === 0
+      ? ["Chưa ai mở"]
+      : [
+          `${link.viewCount} lượt xem`,
+          ...(link.lastViewedAt ? [`mở gần nhất ${formatRelative(link.lastViewedAt)}`] : []),
+          ...(link.downloadCount > 0 ? [`${link.downloadCount} lượt tải`] : []),
+        ];
+  return (
+    <p className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+      <LinkFlags hasPassword={link.hasPassword} allowDownload={link.allowDownload} />
+      <span
+        className="truncate"
+        title={link.lastViewedAt ? `Mở gần nhất ${formatDateTime(link.lastViewedAt)}` : undefined}
+      >
+        {parts.join(" · ")}
+      </span>
+    </p>
   );
 }
 

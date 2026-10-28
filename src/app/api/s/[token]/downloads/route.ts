@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ForbiddenError, NotFoundError } from "@/server/permissions";
 import { listSharedDownload, signDownload } from "@/server/downloads";
-import { resolveShareLink } from "@/server/share-links";
+import { countDownload, resolveShareLink } from "@/server/share-links";
 
 const bodySchema = z.object({
   folderId: z.uuid().optional(),
@@ -13,10 +13,15 @@ export async function POST(req: Request, ctx: RouteContext<"/api/s/[token]/downl
   const { token } = await ctx.params;
   const resolved = await resolveShareLink(token);
   if (resolved.status !== "ok") return Response.json({ error: "Link không còn hiệu lực" }, { status: 404 });
+  if (!resolved.link.allowDownload) {
+    return Response.json({ error: "Link này không cho phép tải về" }, { status: 403 });
+  }
   try {
     const body = bodySchema.parse(await req.json());
     const list = await listSharedDownload(resolved.link, resolved.root, body);
-    return Response.json(await signDownload(list));
+    const signed = await signDownload(list);
+    await countDownload(resolved.link.id);
+    return Response.json(signed);
   } catch (err) {
     if (err instanceof NotFoundError) return Response.json({ error: err.message }, { status: 404 });
     if (err instanceof ForbiddenError) return Response.json({ error: err.message }, { status: 403 });

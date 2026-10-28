@@ -49,7 +49,7 @@ export function FolderGrid({
 }) {
   const [renaming, setRenaming] = useState<GridFolder | null>(null);
   const [moving, setMoving] = useState<GridFolder | null>(null);
-  const urls = useMediaUrls();
+  const { zip } = useMediaUrls();
   const [sharing, setSharing] = useState<GridFolder | null>(null);
   const [deleting, setDeleting] = useState<GridFolder | null>(null);
   // Library roots get cover cards; subfolders inside a folder get compact rows.
@@ -91,7 +91,7 @@ export function FolderGrid({
             onRename={can.rename(f.role) ? () => setRenaming(f) : undefined}
             onMove={parentId && can.move(f.role, isRoot) ? () => setMoving(f) : undefined}
             onShare={can.share(f.role) ? () => setSharing(f) : undefined}
-            onDownload={() => void startZipDownload(urls.zip, { folderId: f.id }, `${f.name}.zip`)}
+            onDownload={zip ? () => void startZipDownload(zip, { folderId: f.id }, `${f.name}.zip`) : undefined}
             onDelete={can.delete(f.role, isRoot) ? () => setDeleting(f) : undefined}
           />
         ))}

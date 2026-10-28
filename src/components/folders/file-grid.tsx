@@ -153,14 +153,16 @@ export function FileGrid({
   }
 
   function downloadPicked() {
+    const { download, zip } = urls;
+    if (!download || !zip) return;
     // One file needs no zip.
-    if (picked.length === 1) window.location.assign(urls.download(picked[0]));
-    else void startZipDownload(urls.zip, { fileIds: picked }, `${folderName} - ${picked.length} file.zip`);
+    if (picked.length === 1) window.location.assign(download(picked[0]));
+    else void startZipDownload(zip, { fileIds: picked }, `${folderName} - ${picked.length} file.zip`);
     exitSelection();
   }
 
   const toolbarActions: ToolbarAction[] = [
-    { label: "Tải về", icon: DownloadIcon, primary: true, onClick: downloadPicked },
+    ...(urls.download ? [{ label: "Tải về", icon: DownloadIcon, primary: true, onClick: downloadPicked }] : []),
     ...(canManage
       ? [
           {
@@ -210,7 +212,9 @@ export function FileGrid({
         </div>
         <div className="flex items-center gap-2">
           {files.length > 1 && <SortMenu value={sort} options={sortOptions} onChange={setSort} />}
+          {/* Picking only leads to toolbar actions; without any, there's nothing to pick for. */}
           {files.length > 0 &&
+            (urls.download !== null || canManage) &&
             (selected === null ? (
               <Button variant="outline" size="lg" onClick={() => setSelected(new Set())}>
                 <ListChecksIcon data-icon="inline-start" />

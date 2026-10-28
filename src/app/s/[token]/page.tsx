@@ -9,6 +9,8 @@ import { FileGrid } from "@/components/folders/file-grid";
 import { SubfolderCard } from "@/components/folders/folder-card";
 import { SharedMediaUrls } from "@/components/folders/media-urls";
 import { PageShell } from "@/components/page-header";
+import { PasswordGate } from "@/components/share/password-gate";
+import { ViewBeacon } from "@/components/share/view-beacon";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -39,11 +41,18 @@ export async function generateMetadata(props: PageProps<"/s/[token]">): Promise<
   };
 }
 
-/** Public view of a share link: no account, read-only, download allowed. */
+/** Public view of a share link: no account, read-only, downloads unless the link turns them off. */
 export default async function SharedPage(props: PageProps<"/s/[token]">) {
   const { token } = await props.params;
   const { f } = await props.searchParams;
   const resolved = await resolveShareLink(token);
+  if (resolved.status === "locked") {
+    return (
+      <Centered>
+        <PasswordGate token={token} />
+      </Centered>
+    );
+  }
   if (resolved.status !== "ok") return <Unavailable expired={resolved.status === "expired"} />;
 
   const { link, root } = resolved;
@@ -64,7 +73,8 @@ export default async function SharedPage(props: PageProps<"/s/[token]">) {
   const isEmpty = view.subfolders.length === 0 && view.files.length === 0;
 
   return (
-    <SharedMediaUrls token={token}>
+    <SharedMediaUrls token={token} allowDownload={link.allowDownload}>
+      <ViewBeacon token={token} />
       <div className="min-h-svh bg-background">
         <header className="flex items-center justify-between gap-4 border-b border-[#1a1c21] px-5 py-3.5 sm:px-8 lg:px-12">
           <div className="flex items-center gap-2.5">
@@ -145,13 +155,22 @@ export default async function SharedPage(props: PageProps<"/s/[token]">) {
   );
 }
 
-function Unavailable({ expired }: { expired: boolean }) {
+/** Logo above one centred card, for pages that show no shared content. */
+function Centered({ children }: { children: React.ReactNode }) {
   return (
     <main className="flex min-h-svh flex-col items-center justify-center gap-10 bg-background px-6 py-12">
       <div className="flex items-center gap-2.5">
         <ReelMark className="size-10 rounded-xl" />
         <Wordmark className="text-[22px]" />
       </div>
+      {children}
+    </main>
+  );
+}
+
+function Unavailable({ expired }: { expired: boolean }) {
+  return (
+    <Centered>
       <Empty className="max-w-md flex-none rounded-[18px] border border-dashed border-border py-14">
         <EmptyHeader>
           <EmptyMedia variant="icon" className="size-12 rounded-xl bg-card [&_svg]:size-6">
@@ -167,6 +186,6 @@ function Unavailable({ expired }: { expired: boolean }) {
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
-    </main>
+    </Centered>
   );
 }

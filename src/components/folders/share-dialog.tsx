@@ -88,7 +88,7 @@ export function ShareDialog({
           <DialogDescription>
             {tab === "members"
               ? "Quyền áp dụng cho folder này và mọi folder con bên trong."
-              : "Ai có link đều xem và tải được, không cần đăng nhập. Link cả folder gồm luôn các folder con."}
+              : "Ai có link (và mật khẩu, nếu đặt) đều xem được, không cần đăng nhập. Link cả folder gồm luôn các folder con."}
           </DialogDescription>
         </DialogHeader>
 
