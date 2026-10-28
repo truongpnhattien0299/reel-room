@@ -57,6 +57,13 @@
       "when": 1793174193795,
       "tag": "0007_favorites",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793174899343,
+      "tag": "0008_file_sha256",
+      "breakpoints": true
     }
   ]
 }

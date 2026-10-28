@@ -49,3 +49,15 @@ index("files_sha256_idx").on(t.sha256),
 - Upload một ảnh, upload lại chính ảnh đó vào folder khác → dialog báo trùng và chỉ đúng chỗ; chọn bỏ qua → không có file mới.
 - Upload 100 ảnh mới hoàn toàn → không có dialog, thời gian thêm không đáng kể (không băm file nào vì không trùng kích thước).
 - Video 2 GB trùng → băm chạy trong worker, giao diện vẫn mượt.
+
+## Ghi chú khi làm
+- **Hash lưu cho mọi file mới, không chỉ file bị nghi trùng.** Nếu chỉ băm file cùng kích thước thì bản gốc gần như không bao giờ có hash, và lần upload lại chỉ so được tên. Vì vậy mỗi file đang upload được băm nền trong worker (song song với upload, lần lượt từng file) và hash gửi kèm `/api/uploads/[fileId]/complete`. File đã băm lúc kiểm tra thì dùng lại hash (`WeakMap<File, string>`). Route đăng ký `/api/uploads` không đổi.
+- **`/api/uploads/check` một route cho cả hai bước:** body `{ items: [{ key, size, name, sha256? }] }` (không cần `folderId`: tìm trong mọi folder user đọc được). Mỗi `key` trả `{ needsHash, matches }`. Không có hash → so kích thước + tên; có hash → trùng hash (`exact`) trước, rồi file cũ chưa có hash cùng kích thước + tên. File có hash khác thì không tính là trùng. So tên không phân biệt hoa thường. Logic ở `src/server/duplicates.ts` (`checkDuplicates`) để test thẳng.
+- File > 4 GB (`MAX_HASH_SIZE`) không băm: bước 2 gửi không hash → chỉ cảnh báo "Có thể trùng" theo kích thước + tên.
+- Băm: `hash-wasm` qua `file.stream()` (khối của trình duyệt, không tự cắt 8 MB). `sha256Stream` tách riêng ở `src/components/upload/hash.ts` để test trong Node; worker `hash-worker.ts` chỉ gọi nó.
+- Lỗi khi kiểm tra (mạng, server) → upload luôn, không chặn. Đóng dialog (Esc / X) = bỏ qua tất cả, như nút mặc định.
+- Nhiều lần thả file cùng lúc → các dialog xếp hàng, hiện lần lượt.
+- Switch "Không kiểm tra file trùng" ở chân panel upload, lưu `localStorage` `rr_skip_dup_check`. Khi bật vẫn băm nền để lưu hash.
+- Test: `src/server/duplicates.test.ts` (quyền, thứ tự exact/likely, bỏ file trong thùng rác, file có hash khác), `src/components/upload/hash.test.ts` (hash đã biết, qua ranh giới khối).
+- Đã thử trên trình duyệt: upload ảnh → upload lại cùng nội dung tên khác → dialog "Trùng · trong Đích test", file mới khác trong cùng lần thả upload ngay; bỏ qua → không có file mới + toast; bật "Vẫn upload" → upload; chế độ tắt kiểm tra → không gọi `/check`. 375px không tràn.
+- Migration `0008_file_sha256`: môi trường khác chạy `pnpm db:migrate`.

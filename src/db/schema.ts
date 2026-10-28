@@ -154,6 +154,11 @@ export const files = pgTable(
     width: bigint("width", { mode: "number" }),
     height: bigint("height", { mode: "number" }),
     durationMs: bigint("duration_ms", { mode: "number" }),
+    /**
+     * Hex SHA-256 computed by the uploader's browser. A hint for duplicate
+     * detection only: the server never reads the bytes to check it.
+     */
+    sha256: text("sha256"),
     status: fileStatus("status").notNull().default("uploading"),
     uploadedBy: text("uploaded_by")
       .notNull()
@@ -170,6 +175,8 @@ export const files = pgTable(
     index("files_folder_idx").on(t.folderId),
     index("files_deleted_idx").on(t.deletedAt),
     index("files_status_created_idx").on(t.status, t.createdAt),
+    index("files_size_idx").on(t.size),
+    index("files_sha256_idx").on(t.sha256),
   ],
 );
 
