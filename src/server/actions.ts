@@ -27,11 +27,19 @@ import {
   requireFolderRole,
   roleAtLeast,
 } from "@/server/permissions";
-import { type ActivityFilter, listActivity, logActivity, someNames } from "@/server/activity";
+import { type ActivityFilter, type ActivityMeta, listActivity, logActivity, someNames } from "@/server/activity";
 import { INVITE_TTL_DAYS, newInviteToken, resolveInvitation, sendInviteEmail } from "@/server/invitations";
 import { purgeFiles, purgeFolderTree } from "@/server/purge";
 import { grantedOn, listFolderMembers } from "@/server/queries";
-import { listShareLinkFiles, listShareLinks, newShareToken } from "@/server/share-links";
+import {
+  hashLinkPassword,
+  LOCK_MINUTES,
+  linkPasswordSchema,
+  MAX_ATTEMPTS,
+  setUnlockCookie,
+  verifyLinkPassword,
+} from "@/server/link-password";
+import { listShareLinkFiles, listShareLinks, newShareToken, resolveShareLink } from "@/server/share-links";
 
 export type ActionResult<T = void> = { error?: string; data?: T };
 
@@ -262,12 +270,15 @@ const shareLinkSchema = z.object({
   /** Share just these files (all in `folderId`); omit to share the whole folder. */
   fileIds: z.array(z.uuid()).min(1, "Chọn ít nhất một file").max(500, "Chọn tối đa 500 file").optional(),
   expiresAt: expirySchema,
+  /** Visitors must type it first; omit for none. */
+  password: linkPasswordSchema.optional(),
+  allowDownload: z.boolean().default(true),
 });
 
 export async function createShareLink(input: z.input<typeof shareLinkSchema>) {
   const session = await requireSession();
   return run(async () => {
-    const { folderId, fileIds, expiresAt } = shareLinkSchema.parse(input);
+    const { folderId, fileIds, expiresAt, password, allowDownload } = shareLinkSchema.parse(input);
     const { folder } = await requireFolderRole(session, folderId, "editor");
     const id = crypto.randomUUID();
     const token = newShareToken();
@@ -279,6 +290,8 @@ export async function createShareLink(input: z.input<typeof shareLinkSchema>) {
           kind: fileIds ? "files" : "folder",
           count,
           expiresAt: expiresAt?.toISOString() ?? null,
+          ...(password && { password: "set" as const }),
+          ...(!allowDownload && { allowDownload }),
         },
       });
     const link = db.insert(shareLinks).values({
@@ -288,6 +301,8 @@ export async function createShareLink(input: z.input<typeof shareLinkSchema>) {
       folderId,
       expiresAt,
       createdBy: session.user.id,
+      passwordHash: password ? await hashLinkPassword(password) : null,
+      allowDownload,
     });
     if (!fileIds) {
       await db.batch([link, log()]);
@@ -378,19 +393,89 @@ export async function deleteShareLinks(linkIds: string[]) {
   });
 }
 
-export async function updateShareLinkExpiry(linkId: string, expiresAt: Date | null) {
+const linkUpdateSchema = z.object({
+  expiresAt: expirySchema.optional(),
+  /** A new password, or null to remove it. */
+  password: linkPasswordSchema.nullable().optional(),
+  allowDownload: z.boolean().optional(),
+});
+
+/** Changes any of a link's expiry, password and download setting. */
+export async function updateShareLink(linkId: string, input: z.input<typeof linkUpdateSchema>) {
   const session = await requireSession();
   return run(async () => {
     const [link] = await requireLinkManager(session, [z.uuid().parse(linkId)]);
     if (link.deletedAt) throw new ForbiddenError("Folder đang trong thùng rác, hãy khôi phục trước");
-    const expiry = expirySchema.parse(expiresAt);
+    const { expiresAt, password, allowDownload } = linkUpdateSchema.parse(input);
+    const changes: Partial<typeof shareLinks.$inferInsert> = {};
+    const meta: ActivityMeta = { folderName: link.folderName };
+    if (expiresAt !== undefined) {
+      changes.expiresAt = expiresAt;
+      meta.expiresAt = expiresAt?.toISOString() ?? null;
+    }
+    if (password !== undefined) {
+      // A new hash also voids every visitor's unlock cookie.
+      changes.passwordHash = password === null ? null : await hashLinkPassword(password);
+      changes.failedAttempts = 0;
+      changes.lockedUntil = null;
+      meta.password = password === null ? "removed" : "set";
+    }
+    if (allowDownload !== undefined) {
+      changes.allowDownload = allowDownload;
+      meta.allowDownload = allowDownload;
+    }
+    if (Object.keys(changes).length === 0) return;
     await db.batch([
-      db.update(shareLinks).set({ expiresAt: expiry }).where(eq(shareLinks.id, link.id)),
-      logActivity(session, "link.update", {
-        folder: { id: link.folderId, path: link.path },
-        meta: { folderName: link.folderName, expiresAt: expiry?.toISOString() ?? null },
-      }),
+      db.update(shareLinks).set(changes).where(eq(shareLinks.id, link.id)),
+      logActivity(session, "link.update", { folder: { id: link.folderId, path: link.path }, meta }),
     ]);
+  });
+}
+
+/**
+ * A visitor types a link's password. After `MAX_ATTEMPTS` wrong ones in a row
+ * the link refuses every try for `LOCK_MINUTES`. That lock is per link, so
+ * someone guessing can briefly shut out the real recipient too; fine for a
+ * small private app, and it keeps guessing slow.
+ */
+export async function unlockShareLink(token: string, password: string) {
+  return run(async () => {
+    const resolved = await resolveShareLink(token);
+    if (resolved.status === "ok") return;
+    if (resolved.status !== "locked") throw new NotFoundError("Link không còn hiệu lực");
+    const [link] = await db
+      .select({
+        id: shareLinks.id,
+        passwordHash: shareLinks.passwordHash,
+        expiresAt: shareLinks.expiresAt,
+        lockedUntil: shareLinks.lockedUntil,
+      })
+      .from(shareLinks)
+      .where(eq(shareLinks.id, resolved.linkId));
+    const now = new Date();
+    const lockedFor = (until: Date) =>
+      new ForbiddenError(`Nhập sai quá nhiều lần. Thử lại sau ${Math.ceil((until.getTime() - now.getTime()) / 60_000)} phút`);
+    if (link.lockedUntil && link.lockedUntil > now) throw lockedFor(link.lockedUntil);
+
+    const ok = await verifyLinkPassword(z.string().max(1000).parse(password), link.passwordHash!);
+    if (ok) {
+      await db.update(shareLinks).set({ failedAttempts: 0, lockedUntil: null }).where(eq(shareLinks.id, link.id));
+      await setUnlockCookie(link);
+      return;
+    }
+    // One statement, so tries sent at once still all count.
+    const until = new Date(now.getTime() + LOCK_MINUTES * 60_000);
+    const reachesLimit = sql`${shareLinks.failedAttempts} + 1 >= ${MAX_ATTEMPTS}`;
+    const [after] = await db
+      .update(shareLinks)
+      .set({
+        failedAttempts: sql`case when ${reachesLimit} then 0 else ${shareLinks.failedAttempts} + 1 end`,
+        lockedUntil: sql`case when ${reachesLimit} then ${until.toISOString()}::timestamp else null end`,
+      })
+      .where(eq(shareLinks.id, link.id))
+      .returning({ lockedUntil: shareLinks.lockedUntil });
+    if (after.lockedUntil) throw lockedFor(after.lockedUntil);
+    throw new ForbiddenError("Mật khẩu không đúng");
   });
 }
 

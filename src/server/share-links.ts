@@ -5,6 +5,7 @@ import { cache } from "react";
 import { db } from "@/db";
 import { files, folders, shareLinkFiles, shareLinks, user, type Folder, type ShareLink } from "@/db/schema";
 import { isAdmin, type Session } from "@/lib/auth";
+import { isUnlocked } from "@/server/link-password";
 import { ancestorIds, getUserRole, requireFolderRole, roleAtLeast } from "@/server/permissions";
 import { fileColumns, getFolderStats, grantedOn, hasGrant, toFileItem } from "@/server/queries";
 
@@ -18,6 +19,7 @@ const inSubtree = (path: string) => or(eq(folders.path, path), like(folders.path
 
 export type ResolvedShareLink =
   | { status: "ok"; link: ShareLink; root: Folder }
+  | { status: "locked"; linkId: string }
   | { status: "expired" }
   | { status: "invalid" };
 
@@ -25,6 +27,7 @@ export type ResolvedShareLink =
  * Looks up a public link. It works only while it hasn't expired, its folder
  * isn't in the trash, and its creator can still edit that folder — so
  * removing someone from a folder also kills the links they handed out.
+ * A link with a password is "locked" until this browser has typed it.
  */
 export const resolveShareLink = cache(async (token: string): Promise<ResolvedShareLink> => {
   if (!TOKEN.test(token)) return { status: "invalid" };
@@ -41,8 +44,17 @@ export const resolveShareLink = cache(async (token: string): Promise<ResolvedSha
   if (!row || row.root.deletedAt || row.creator.banned) return { status: "invalid" };
   if (row.link.expiresAt && row.link.expiresAt <= new Date()) return { status: "expired" };
   if (!roleAtLeast(await getUserRole(row.creator, row.root), "editor")) return { status: "invalid" };
+  if (!(await isUnlocked(row.link))) return { status: "locked", linkId: row.link.id };
   return { status: "ok", link: row.link, root: row.root };
 });
+
+/** One more download (a file, or a zip) through the link. */
+export async function countDownload(linkId: string) {
+  await db
+    .update(shareLinks)
+    .set({ downloadCount: sql`${shareLinks.downloadCount} + 1` })
+    .where(eq(shareLinks.id, linkId));
+}
 
 /** A ready, live file the link exposes, or null. */
 export async function findSharedFile(link: ShareLink, root: Folder, fileId: string) {
@@ -135,6 +147,15 @@ export async function getSharedFiles(link: ShareLink) {
   return rows.map(toPublicFileItem);
 }
 
+/** Options and counters shown next to a link; never the password hash. */
+const linkOptionColumns = {
+  hasPassword: sql<boolean>`${shareLinks.passwordHash} is not null`,
+  allowDownload: shareLinks.allowDownload,
+  viewCount: shareLinks.viewCount,
+  downloadCount: shareLinks.downloadCount,
+  lastViewedAt: shareLinks.lastViewedAt,
+};
+
 /** Links created on a folder, for its share dialog. Editors and up. */
 export async function listShareLinks(session: Session, folderId: string) {
   await requireFolderRole(session, folderId, "editor");
@@ -145,6 +166,7 @@ export async function listShareLinks(session: Session, folderId: string) {
       kind: shareLinks.kind,
       expiresAt: shareLinks.expiresAt,
       createdAt: shareLinks.createdAt,
+      ...linkOptionColumns,
       createdBy: shareLinks.createdBy,
       creatorName: user.name,
       fileCount: sql<number>`(select count(*)::int from ${shareLinkFiles} where ${shareLinkFiles.linkId} = ${shareLinks.id})`,
@@ -189,6 +211,7 @@ export async function listAllShareLinks(session: Session) {
       kind: shareLinks.kind,
       expiresAt: shareLinks.expiresAt,
       createdAt: shareLinks.createdAt,
+      ...linkOptionColumns,
       folder: { id: folders.id, name: folders.name },
       creator: { id: user.id, name: user.name, image: user.image },
       fileCount: sql<number>`(select count(*)::int from ${shareLinkFiles} where ${shareLinkFiles.linkId} = ${shareLinks.id})`,

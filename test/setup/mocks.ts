@@ -5,3 +5,6 @@ import { vi } from "vitest";
 vi.mock("@/db", () => import("./db"));
 vi.mock("@/lib/auth", () => import("./auth"));
 vi.mock("next/cache", () => ({ refresh: vi.fn(), revalidatePath: vi.fn() }));
+vi.mock("next/headers", () => import("./headers"));
+
+process.env.BETTER_AUTH_SECRET ??= "test-secret";

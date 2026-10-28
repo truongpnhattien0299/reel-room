@@ -32,7 +32,10 @@ export function FileCard({
   const selecting = selected !== undefined;
   const actions: MenuAction[] = [];
   if (!selecting) {
-    actions.push({ label: "Tải về", icon: DownloadIcon, onClick: () => window.location.assign(urls.download(file.id)) });
+    const download = urls.download;
+    if (download) {
+      actions.push({ label: "Tải về", icon: DownloadIcon, onClick: () => window.location.assign(download(file.id)) });
+    }
     if (onRename) actions.push({ label: "Đổi tên", icon: PencilIcon, onClick: onRename });
     if (onMove) actions.push({ label: "Di chuyển", icon: FolderInputIcon, onClick: onMove });
     if (onDelete) {

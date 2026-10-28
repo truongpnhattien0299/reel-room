@@ -19,7 +19,7 @@ import {
   shareFolder,
   trashFiles,
   trashFolder,
-  updateShareLinkExpiry,
+  updateShareLink,
 } from "./actions";
 import { listActivity, logActivity } from "./activity";
 import { ForbiddenError } from "./permissions";
@@ -111,7 +111,7 @@ describe("logging", () => {
     signIn(sessionFor(owner));
     await createShareLink({ folderId: a.id, expiresAt: null });
     const [link] = await db.query.shareLinks.findMany();
-    await updateShareLinkExpiry(link.id, new Date(Date.now() + 86_400_000));
+    await updateShareLink(link.id, { expiresAt: new Date(Date.now() + 86_400_000) });
     await deleteShareLinks([link.id]);
     await revokeShare(a.id, editor.id);
     // Removing someone who isn't a member changes nothing and logs nothing.

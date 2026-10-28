@@ -24,6 +24,9 @@ export type ActivityMeta = {
   email?: string;
   reason?: string | null;
   via?: "email" | "set";
+  /** Link settings changed or chosen at creation. */
+  password?: "set" | "removed";
+  allowDownload?: boolean;
 };
 
 const MAX_NAMES = 20;

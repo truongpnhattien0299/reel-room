@@ -13,10 +13,11 @@ export const mediaKind = (file: { mimeType: string }): MediaKind =>
 
 export type MediaUrls = {
   content: (id: string) => string;
-  download: (id: string) => string;
+  /** Null when downloads are off (a public link can turn them off). */
+  download: ((id: string) => string) | null;
   thumb: (id: string) => string;
   /** POST endpoint listing what goes into a zip (see `src/lib/zip-download.ts`). */
-  zip: string;
+  zip: string | null;
 };
 
 export const memberMediaUrls: MediaUrls = {
@@ -27,13 +28,13 @@ export const memberMediaUrls: MediaUrls = {
 };
 
 /** Same files, served through a public link instead of the member's session. */
-export function sharedMediaUrls(token: string): MediaUrls {
+export function sharedMediaUrls(token: string, allowDownload = true): MediaUrls {
   const base = `/api/s/${encodeURIComponent(token)}/files`;
   return {
     content: (id) => `${base}/${id}/content`,
-    download: (id) => `${base}/${id}/content?download=1`,
+    download: allowDownload ? (id) => `${base}/${id}/content?download=1` : null,
     thumb: (id) => `${base}/${id}/thumb`,
-    zip: `/api/s/${encodeURIComponent(token)}/downloads`,
+    zip: allowDownload ? `/api/s/${encodeURIComponent(token)}/downloads` : null,
   };
 }
 

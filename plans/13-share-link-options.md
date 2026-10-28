@@ -71,3 +71,18 @@ lockedUntil: timestamp("locked_until"),
 - Gọi thẳng URL ảnh `/api/s/<token>/files/<id>/content` khi chưa mở khoá → 404.
 - Tắt tải về → không còn nút tải; gọi `?download=1` → 403.
 - Mở link ẩn danh 2 lần trong ngày → lượt xem tăng 1.
+
+## Ghi chú khi làm
+- **Ẩn nút tải:** `MediaUrls.download` / `zip` thành `null` khi link tắt tải về (`sharedMediaUrls(token, allowDownload)`). Mọi chỗ có nút tải (thẻ file, thanh chọn nhiều, "Tải tất cả", trình xem và màn lỗi của ảnh/video/audio) đọc từ đó nên tự ẩn. Trang công khai không còn nút "Chọn" khi tắt tải, vì chọn xong không có thao tác nào.
+- **Khoá sau 10 lần sai:** khi khoá thì `failedAttempts` về 0, nên hết 15 phút người dùng lại có đủ 10 lần thử. Cộng lần sai bằng một câu `UPDATE ... RETURNING` để các lần thử gửi cùng lúc vẫn được đếm đủ.
+- **Cookie mở khoá:** HMAC của `id + passwordHash`. Đổi hoặc gỡ mật khẩu là cookie cũ hết hiệu lực. `secure` chỉ bật ở production, để chạy được trên `http://localhost`.
+- **Ai cũng phải nhập mật khẩu:** gồm cả thành viên folder. Dù vậy, thành viên đã đăng nhập không được tính lượt xem.
+- **Cách đếm lượt tải:** mỗi lần tải một file (`?download=1`) hoặc mỗi lần bấm tải zip tính 1 lượt. Không phân biệt người tải là ai.
+- **Server actions:** `updateShareLinkExpiry` được thay bằng `updateShareLink(id, { expiresAt?, password?, allowDownload? })`. Nhật ký `link.update` ghi những gì đã đổi (hạn / mật khẩu / tải về). `link.create` ghi kèm các tuỳ chọn đã chọn.
+- **Trang `/links`:**
+  - Biểu tượng khoá và badge "Không cho tải" nằm ở dòng thống kê, không cạnh tên. Lý do: ở 375px tên bị ép mất chữ.
+  - "Gỡ mật khẩu" và "Bật/Tắt tải về" chạy ngay khi bấm trong menu, không mở dialog.
+  - `ExpiryDialog` đổi thành `LinkSettingsDialog`, có 2 chế độ: hạn và mật khẩu.
+- **Test:**
+  - Thêm mock `next/headers` (`test/setup/headers.ts`): một hũ cookie dùng chung, gọi `clearCookies()` để giả lập một trình duyệt khác.
+  - Mock đặt sẵn `BETTER_AUTH_SECRET` cho test.

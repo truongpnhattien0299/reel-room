@@ -38,7 +38,7 @@ export function ImageViewer({
 }: {
   file: { id: string; name: string; hasThumb: boolean; width: number | null; height: number | null };
   src: string;
-  downloadUrl: string;
+  downloadUrl: string | null;
   onPrev?: () => void;
   onNext?: () => void;
 }) {
@@ -222,12 +222,15 @@ export function ImageViewer({
     return (
       <div className="flex size-full flex-col items-center justify-center gap-4 text-center">
         <p className="max-w-sm text-sm text-muted-foreground">
-          Trình duyệt không hiển thị được ảnh này. Hãy tải về để xem bằng ứng dụng khác.
+          Trình duyệt không hiển thị được ảnh này.
+          {downloadUrl && " Hãy tải về để xem bằng ứng dụng khác."}
         </p>
-        <Button size="lg" nativeButton={false} render={<a href={downloadUrl} />}>
-          <DownloadIcon data-icon="inline-start" />
-          Tải về
-        </Button>
+        {downloadUrl && (
+          <Button size="lg" nativeButton={false} render={<a href={downloadUrl} />}>
+            <DownloadIcon data-icon="inline-start" />
+            Tải về
+          </Button>
+        )}
       </div>
     );
   }

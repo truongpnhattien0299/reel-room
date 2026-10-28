@@ -25,7 +25,7 @@ const noSubscribe = () => () => {};
 const usePipSupported = () =>
   useSyncExternalStore(noSubscribe, () => document.pictureInPictureEnabled, () => false);
 
-export function VideoPlayer({ src, downloadUrl }: { src: string; downloadUrl: string }) {
+export function VideoPlayer({ src, downloadUrl }: { src: string; downloadUrl: string | null }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const { state, controls } = useMediaState(videoRef);
@@ -157,12 +157,15 @@ export function VideoPlayer({ src, downloadUrl }: { src: string; downloadUrl: st
       {state.error ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-stage/80 p-6 text-center">
           <p className="max-w-sm text-sm text-muted-foreground">
-            Trình duyệt không phát được video này. Hãy tải về để xem bằng ứng dụng khác.
+            Trình duyệt không phát được video này.
+            {downloadUrl && " Hãy tải về để xem bằng ứng dụng khác."}
           </p>
-          <Button size="lg" nativeButton={false} render={<a href={downloadUrl} />}>
-            <DownloadIcon data-icon="inline-start" />
-            Tải về
-          </Button>
+          {downloadUrl && (
+            <Button size="lg" nativeButton={false} render={<a href={downloadUrl} />}>
+              <DownloadIcon data-icon="inline-start" />
+              Tải về
+            </Button>
+          )}
         </div>
       ) : state.waiting ? (
         <Spinner className="pointer-events-none absolute" />

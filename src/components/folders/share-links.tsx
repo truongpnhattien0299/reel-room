@@ -1,9 +1,20 @@
 "use client";
 
-import { CheckIcon, CopyIcon, FolderIcon, ImagesIcon, Link2Icon, XIcon } from "lucide-react";
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  CopyIcon,
+  DownloadIcon,
+  FolderIcon,
+  ImagesIcon,
+  Link2Icon,
+  LockIcon,
+  XIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { PasswordInput } from "@/components/auth/password-input";
 import { absoluteUrl, copyText, CopyLinkField, useCopy } from "@/components/copy-link";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,9 +25,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { shareLinkPath } from "@/lib/media";
 import { cn } from "@/lib/utils";
@@ -100,6 +112,116 @@ export function ExpiryPicker({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Password and downloads
+// ---------------------------------------------------------------------------
+
+export type LinkOptions = { password: string; allowDownload: boolean };
+export const DEFAULT_LINK_OPTIONS: LinkOptions = { password: "", allowDownload: true };
+
+/** What `createShareLink` takes from the options: an empty password means none. */
+export const linkOptionsInput = ({ password, allowDownload }: LinkOptions) => ({
+  password: password || undefined,
+  allowDownload,
+});
+
+export const DOWNLOAD_NOTE = "Người xem vẫn có thể lưu ảnh khi đang xem; tuỳ chọn này chỉ ẩn nút tải.";
+
+/** Lets a visitor download what the link shows. */
+export function AllowDownloadField({
+  checked,
+  onCheckedChange,
+  disabled,
+}: {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Field orientation="horizontal" className="items-start justify-between gap-4">
+      <div className="flex flex-col gap-1">
+        <FieldLabel htmlFor="allow-download">Cho phép tải về</FieldLabel>
+        <FieldDescription className="text-xs">{DOWNLOAD_NOTE}</FieldDescription>
+      </div>
+      <Switch id="allow-download" checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} />
+    </Field>
+  );
+}
+
+/** A folded "Tuỳ chọn" section: password and downloads, for a new link. */
+export function LinkOptionsFields({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: LinkOptions;
+  onChange: (value: LinkOptions) => void;
+  disabled?: boolean;
+}) {
+  const changed = value.password !== "" || !value.allowDownload;
+  const [open, setOpen] = useState(changed);
+  return (
+    <div className="flex flex-col gap-3">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="link-options"
+        onClick={() => setOpen(!open)}
+        className="flex h-9 items-center gap-1.5 self-start rounded-md text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <ChevronDownIcon className={cn("size-4 transition-transform", !open && "-rotate-90")} aria-hidden="true" />
+        Tuỳ chọn
+        {!open && changed && <LinkFlags hasPassword={value.password !== ""} allowDownload={value.allowDownload} />}
+      </button>
+      {open && (
+        <div id="link-options" className="flex flex-col gap-4 rounded-xl bg-card p-3.5 ring-1 ring-border">
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor="link-password">Mật khẩu (không bắt buộc)</FieldLabel>
+            <PasswordInput
+              id="link-password"
+              autoComplete="new-password"
+              maxLength={128}
+              placeholder="Để trống nếu không cần"
+              value={value.password}
+              onChange={(e) => onChange({ ...value, password: e.target.value })}
+              disabled={disabled}
+            />
+            <FieldDescription className="text-xs">
+              Tối thiểu 4 ký tự. Gửi mật khẩu cho người nhận qua kênh khác với link.
+            </FieldDescription>
+          </Field>
+          <AllowDownloadField
+            checked={value.allowDownload}
+            onCheckedChange={(allowDownload) => onChange({ ...value, allowDownload })}
+            disabled={disabled}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Small marks for a link's password and download setting. */
+export function LinkFlags({ hasPassword, allowDownload }: { hasPassword: boolean; allowDownload: boolean }) {
+  if (!hasPassword && allowDownload) return null;
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5 align-middle whitespace-nowrap">
+      {hasPassword && (
+        <span title="Có mật khẩu" className="inline-flex text-muted-foreground">
+          <LockIcon className="size-3.5" aria-hidden="true" />
+          <span className="sr-only">Có mật khẩu</span>
+        </span>
+      )}
+      {!allowDownload && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[11px] leading-none text-muted-foreground">
+          <DownloadIcon className="size-3" aria-hidden="true" />
+          Không cho tải
+        </span>
+      )}
+    </span>
+  );
+}
+
 const linkUrl = (token: string) => absoluteUrl(shareLinkPath(token));
 
 // ---------------------------------------------------------------------------
@@ -124,6 +246,7 @@ export function FolderShareLinks({
 }) {
   const [links, setLinks] = useState<ShareLinkItem[] | null>(null);
   const [expiry, setExpiry] = useState(DEFAULT_EXPIRY);
+  const [options, setOptions] = useState(DEFAULT_LINK_OPTIONS);
   const [error, setError] = useState<string>();
   const [fresh, setFresh] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -142,12 +265,13 @@ export function FolderShareLinks({
       return;
     }
     startTransition(async () => {
-      const res = await createShareLink({ folderId, expiresAt });
+      const res = await createShareLink({ folderId, expiresAt, ...linkOptionsInput(options) });
       if (res.error || !res.data) {
         setError(res.error);
         return;
       }
       setError(undefined);
+      setOptions(DEFAULT_LINK_OPTIONS);
       setFresh(res.data.token);
       await reload();
       if (await copyText(linkUrl(res.data.token))) toast.success("Đã tạo và sao chép link");
@@ -164,6 +288,7 @@ export function FolderShareLinks({
           Tạo link cả folder
         </Button>
       </div>
+      <LinkOptionsFields value={options} onChange={setOptions} disabled={pending} />
       {error && <FieldError>{error}</FieldError>}
 
       <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto" aria-label="Link đã tạo">
@@ -190,8 +315,9 @@ export function FolderShareLinks({
                   <Icon className="size-4 text-primary" aria-hidden="true" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">
-                    {l.kind === "folder" ? "Cả folder" : `${l.fileCount} file đã chọn`}
+                  <p className="flex min-w-0 items-center gap-2 font-medium">
+                    <span className="truncate">{l.kind === "folder" ? "Cả folder" : `${l.fileCount} file đã chọn`}</span>
+                    <LinkFlags hasPassword={l.hasPassword} allowDownload={l.allowDownload} />
                   </p>
                   <p className="truncate text-xs text-muted-foreground">
                     <span
@@ -262,6 +388,7 @@ export function ShareFilesDialog({
   onCreated?: () => void;
 }) {
   const [expiry, setExpiry] = useState(DEFAULT_EXPIRY);
+  const [options, setOptions] = useState(DEFAULT_LINK_OPTIONS);
   const [error, setError] = useState<string>();
   const [token, setToken] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -273,7 +400,7 @@ export function ShareFilesDialog({
       return;
     }
     startTransition(async () => {
-      const res = await createShareLink({ folderId, fileIds, expiresAt });
+      const res = await createShareLink({ folderId, fileIds, expiresAt, ...linkOptionsInput(options) });
       if (res.error || !res.data) {
         setError(res.error);
         return;
@@ -290,7 +417,7 @@ export function ShareFilesDialog({
         <DialogHeader>
           <DialogTitle>Chia sẻ {fileIds.length} file</DialogTitle>
           <DialogDescription>
-            Ai có link đều xem và tải được các file này, không cần đăng nhập.
+            Ai có link (và mật khẩu, nếu đặt) đều xem được các file này, không cần đăng nhập.
           </DialogDescription>
         </DialogHeader>
 
@@ -304,6 +431,7 @@ export function ShareFilesDialog({
         ) : (
           <div className="flex flex-col gap-2">
             <ExpiryPicker value={expiry} onChange={setExpiry} disabled={pending} />
+            <LinkOptionsFields value={options} onChange={setOptions} disabled={pending} />
             {error && <FieldError>{error}</FieldError>}
           </div>
         )}

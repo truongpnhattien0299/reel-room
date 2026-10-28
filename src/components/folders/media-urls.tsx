@@ -9,7 +9,15 @@ const MediaUrlsContext = createContext(memberMediaUrls);
 export const useMediaUrls = () => useContext(MediaUrlsContext);
 
 /** Serves everything below through the public link `token`. */
-export function SharedMediaUrls({ token, children }: { token: string; children: React.ReactNode }) {
-  const urls = useMemo(() => sharedMediaUrls(token), [token]);
+export function SharedMediaUrls({
+  token,
+  allowDownload,
+  children,
+}: {
+  token: string;
+  allowDownload: boolean;
+  children: React.ReactNode;
+}) {
+  const urls = useMemo(() => sharedMediaUrls(token, allowDownload), [token, allowDownload]);
   return <MediaUrlsContext value={urls}>{children}</MediaUrlsContext>;
 }

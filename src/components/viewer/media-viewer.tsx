@@ -58,6 +58,7 @@ export function MediaViewer({
   const stripRef = useRef<HTMLElement>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const urls = useMediaUrls();
+  const downloadUrl = file && urls.download ? urls.download(file.id) : null;
 
   useViewerHotkeys({ enabled: file !== null, arrowsNavigate: kind === "image", onPrev: prev, onNext: next });
 
@@ -113,16 +114,18 @@ export function MediaViewer({
                 >
                   <InfoIcon />
                 </Button>
-                <Button
-                  size="xl"
-                  nativeButton={false}
-                  render={<a href={urls.download(file.id)} />}
-                  aria-label="Tải về"
-                  className="max-sm:w-11 max-sm:px-0!"
-                >
-                  <DownloadIcon data-icon="inline-start" />
-                  <span className="max-sm:hidden">Tải về</span>
-                </Button>
+                {downloadUrl && (
+                  <Button
+                    size="xl"
+                    nativeButton={false}
+                    render={<a href={downloadUrl} />}
+                    aria-label="Tải về"
+                    className="max-sm:w-11 max-sm:px-0!"
+                  >
+                    <DownloadIcon data-icon="inline-start" />
+                    <span className="max-sm:hidden">Tải về</span>
+                  </Button>
+                )}
                 {(onRename || onMove || onDelete) && (
                   <DropdownMenu>
                     <DropdownMenuTrigger
@@ -166,7 +169,7 @@ export function MediaViewer({
                       key={file.id}
                       file={file}
                       src={urls.content(file.id)}
-                      downloadUrl={urls.download(file.id)}
+                      downloadUrl={downloadUrl}
                       onPrev={prev}
                       onNext={next}
                     />
@@ -174,14 +177,14 @@ export function MediaViewer({
                     <VideoPlayer
                       key={file.id}
                       src={urls.content(file.id)}
-                      downloadUrl={urls.download(file.id)}
+                      downloadUrl={downloadUrl}
                     />
                   ) : (
                     <AudioPlayer
                       key={file.id}
                       file={file}
                       src={urls.content(file.id)}
-                      downloadUrl={urls.download(file.id)}
+                      downloadUrl={downloadUrl}
                       folderName={folderName}
                       onEnded={playOn}
                       onPrev={prev}

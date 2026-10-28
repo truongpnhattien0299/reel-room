@@ -13,12 +13,13 @@ export function DownloadFolderButton({
   folder: { id: string; name: string };
   label?: string;
 }) {
-  const urls = useMediaUrls();
+  const { zip } = useMediaUrls();
+  if (!zip) return null;
   return (
     <Button
       variant="outline"
       size="xl"
-      onClick={() => void startZipDownload(urls.zip, { folderId: folder.id }, `${folder.name}.zip`)}
+      onClick={() => void startZipDownload(zip, { folderId: folder.id }, `${folder.name}.zip`)}
     >
       <DownloadIcon data-icon="inline-start" />
       {label}

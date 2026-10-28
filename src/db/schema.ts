@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -220,6 +221,15 @@ export const shareLinks = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
+    /** `salt:hash` (scrypt, base64); null: no password. */
+    passwordHash: text("password_hash"),
+    allowDownload: boolean("allow_download").notNull().default(true),
+    viewCount: integer("view_count").notNull().default(0),
+    downloadCount: integer("download_count").notNull().default(0),
+    lastViewedAt: timestamp("last_viewed_at"),
+    /** Wrong passwords in a row; `lockedUntil` is set when it reaches the limit. */
+    failedAttempts: integer("failed_attempts").notNull().default(0),
+    lockedUntil: timestamp("locked_until"),
   },
   (t) => [
     index("share_links_folder_idx").on(t.folderId),

@@ -47,6 +47,11 @@ const inFolder = (name?: string) => name && <> trong <Place>{name}</Place></>;
 const expiry = (iso?: string | null) =>
   iso ? `hết hạn ${formatDate(new Date(iso))}` : "không hết hạn";
 
+const linkOptions = (m: Row["meta"]) => [
+  ...(m.password ? [m.password === "set" ? "đặt mật khẩu" : "gỡ mật khẩu"] : []),
+  ...(m.allowDownload !== undefined ? [m.allowDownload ? "cho phép tải về" : "tắt tải về"] : []),
+];
+
 /** The sentence after the actor's name, in Vietnamese. */
 export function describe(action: ActivityAction, m: Row["meta"]): React.ReactNode {
   switch (action) {
@@ -82,11 +87,16 @@ export function describe(action: ActivityAction, m: Row["meta"]): React.ReactNod
       return (
         <>
           đã tạo link chia sẻ {m.kind === "files" ? <><Files count={m.count} /> trong </> : "folder "}
-          <Place>{m.folderName}</Place> ({expiry(m.expiresAt)})
+          <Place>{m.folderName}</Place> ({[expiry(m.expiresAt), ...linkOptions(m)].join(", ")})
         </>
       );
-    case "link.update":
-      return <>đã đổi hạn link ở <Place>{m.folderName}</Place> thành {expiry(m.expiresAt)}</>;
+    case "link.update": {
+      const changes = [
+        ...("expiresAt" in m ? [`đổi hạn thành ${expiry(m.expiresAt)}`] : []),
+        ...linkOptions(m),
+      ];
+      return <>đã sửa link ở <Place>{m.folderName}</Place>: {changes.join(", ")}</>;
+    }
     case "link.revoke":
       return <>đã thu hồi {m.count && m.count > 1 ? `${m.count} link` : "link"} ở <Place>{m.folderName}</Place></>;
     case "user.invite":
