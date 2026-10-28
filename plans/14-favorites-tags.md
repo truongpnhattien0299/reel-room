@@ -96,3 +96,6 @@ export const fileTags = pgTable("file_tags", {
   - Dùng `FileGrid` với tên nhóm "Yêu thích"; tải zip nhiều file ở nhiều folder vẫn chạy được.
   - Bỏ thích thì mục ẩn ngay (danh sách lọc theo sao hiện tại, không tải lại).
 - **Bỏ thích không cần quyền đọc:** chỉ xoá dòng của chính user, nên vẫn bỏ được cả mục đã mất quyền.
+
+## 14b — Tag
+Không làm (quyết định ngày 28/10/2026): plan 14 chỉ giữ phần yêu thích.
