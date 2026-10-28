@@ -390,15 +390,34 @@ export async function attachThumbnail(fileId: string) {
   });
 }
 
-export async function trashFile(fileId: string) {
+const fileIdsSchema = z
+  .array(z.uuid())
+  .min(1)
+  .max(500)
+  .transform((ids) => [...new Set(ids)]);
+
+/** Trashes live files, possibly from several folders: editor on each one. */
+export async function trashFiles(fileIds: string[]) {
+  const session = await requireSession();
   return run(async () => {
-    const session = await requireSession();
-    await requireFileRole(fileId, "editor");
+    const ids = fileIdsSchema.parse(fileIds);
+    const rows = await db
+      .select({ folderId: files.folderId })
+      .from(files)
+      .where(and(inArray(files.id, ids), isNull(files.deletedAt)));
+    if (rows.length !== ids.length) throw new NotFoundError("File không tồn tại");
+    for (const folderId of new Set(rows.map((r) => r.folderId))) {
+      await requireFolderRole(session, folderId, "editor");
+    }
     await db
       .update(files)
       .set({ deletedAt: new Date(), deletedBy: session.user.id })
-      .where(eq(files.id, fileId));
+      .where(and(inArray(files.id, ids), isNull(files.deletedAt)));
   });
+}
+
+export async function trashFile(fileId: string) {
+  return trashFiles([fileId]);
 }
 
 // ---------------------------------------------------------------------------
@@ -585,14 +604,33 @@ export async function restoreFolder(folderId: string) {
   });
 }
 
-export async function restoreFile(fileId: string) {
+/** Restores trashed files (the "undo" of `trashFiles`): editor on each folder. */
+export async function restoreFiles(fileIds: string[]) {
+  const session = await requireSession();
   return run(async () => {
-    const { folder } = await requireTrashedFile(fileId);
-    if (folder.deletedAt) {
-      throw new ForbiddenError(`Folder “${folder.name}” đang trong thùng rác. Khôi phục folder trước.`);
+    const ids = fileIdsSchema.parse(fileIds);
+    const rows = await db
+      .select({ folder: folders })
+      .from(files)
+      .innerJoin(folders, eq(folders.id, files.folderId))
+      .where(and(inArray(files.id, ids), isNotNull(files.deletedAt)));
+    if (rows.length !== ids.length) throw new NotFoundError("Không còn trong thùng rác");
+    const byId = new Map(rows.map((r) => [r.folder.id, r.folder]));
+    for (const folder of byId.values()) {
+      if (!roleAtLeast(await getEffectiveRole(session, folder), "editor")) throw new ForbiddenError();
+      if (folder.deletedAt) {
+        throw new ForbiddenError(`Folder “${folder.name}” đang trong thùng rác. Khôi phục folder trước.`);
+      }
     }
-    await db.update(files).set({ deletedAt: null, deletedBy: null }).where(eq(files.id, fileId));
+    await db
+      .update(files)
+      .set({ deletedAt: null, deletedBy: null })
+      .where(and(inArray(files.id, ids), isNotNull(files.deletedAt)));
   });
+}
+
+export async function restoreFile(fileId: string) {
+  return restoreFiles([fileId]);
 }
 
 export async function purgeFolder(folderId: string) {

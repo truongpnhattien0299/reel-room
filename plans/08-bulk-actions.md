@@ -59,3 +59,10 @@ Thanh nổi ở đáy (`role="toolbar"`, đã có) hiện số file đã chọn 
 - Trình duyệt: chọn 3 file bằng Shift + bấm → xoá → toast "Hoàn tác" khôi phục đủ 3. Chọn tất cả → di chuyển sang folder khác.
 - User viewer: vào chế độ chọn được nhưng không thấy Di chuyển / Xoá / Tạo link.
 - Bề rộng 375px: thanh công cụ không tràn.
+
+## Ghi chú khi làm
+- `trashFiles` không trả `deletedAt`: "Hoàn tác" gọi `restoreFiles` với đúng danh sách id, không cần mốc thời gian.
+- Chưa có thao tác nào cho viewer (Tải về ở plan 09), nên nút "Chọn" vẫn chỉ hiện cho editor. Plan 09 bật cho viewer.
+- `TRASH_RETENTION_DAYS` chuyển sang `src/lib/trash.ts` để client dùng được (`queries.ts` là server-only).
+- Điện thoại: thanh hiện Di chuyển + Tạo link, Xoá nằm trong "…"; chữ "đã chọn" ẩn (vẫn có cho trình đọc màn hình) để vừa 375px.
+- Gặp khi test: file có cùng `createdAt` đổi thứ tự sau khi xoá/khôi phục vì `ORDER BY created_at` không có khoá phụ. Xử lý ở plan 10 (sắp xếp).

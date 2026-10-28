@@ -23,7 +23,7 @@ export function FileCard({
 }: {
   file: FileItem;
   selected?: boolean;
-  onOpen: () => void;
+  onOpen: (e: React.MouseEvent) => void;
   onRename?: () => void;
   onMove?: () => void;
   onDelete?: () => void;
