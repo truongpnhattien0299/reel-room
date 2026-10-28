@@ -2,7 +2,7 @@ import "server-only";
 import { alias } from "drizzle-orm/pg-core";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { db } from "@/db";
-import { account, files, folderPermissions, folders, user, type FolderRole } from "@/db/schema";
+import { account, files, folderPermissions, folders, session, user, type FolderRole } from "@/db/schema";
 import { isAdmin, type Session } from "@/lib/auth";
 import { ancestorIds, requireFolderRole } from "@/server/permissions";
 
@@ -245,6 +245,7 @@ export async function listUsers() {
       name: user.name,
       email: user.email,
       role: user.role,
+      banned: sql<boolean>`coalesce(${user.banned}, false)`,
       createdAt: user.createdAt,
       // Invited users get a credential account only once they set a password.
       activated: sql<boolean>`${account.id} is not null`,
@@ -253,6 +254,73 @@ export async function listUsers() {
     .leftJoin(account, and(eq(account.userId, user.id), eq(account.providerId, "credential")))
     .orderBy(asc(user.name));
 }
+
+/** One account for the admin detail page, with what it has done; null if missing. */
+export async function getUserDetail(id: string) {
+  const [row] = await db
+    .select({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      banned: sql<boolean>`coalesce(${user.banned}, false)`,
+      banReason: user.banReason,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      activated: sql<boolean>`${account.id} is not null`,
+    })
+    .from(user)
+    .leftJoin(account, and(eq(account.userId, user.id), eq(account.providerId, "credential")))
+    .where(eq(user.id, id));
+  if (!row) return null;
+  const [[uploads], [created], [sessions]] = await Promise.all([
+    db
+      .select({
+        count: sql<number>`count(*)::int`,
+        size: sql<number>`coalesce(sum(${files.size}), 0)::bigint`.mapWith(Number),
+      })
+      .from(files)
+      .where(and(eq(files.uploadedBy, id), eq(files.status, "ready"), isNull(files.deletedAt))),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(folders)
+      .where(and(eq(folders.createdBy, id), isNull(folders.deletedAt))),
+    db
+      .select({
+        active: sql<number>`count(*) filter (where ${session.expiresAt} > now())::int`,
+        lastSignIn: sql<Date | null>`max(${session.createdAt})`.mapWith((v) => (v ? new Date(v) : null)),
+      })
+      .from(session)
+      .where(eq(session.userId, id)),
+  ]);
+  return {
+    ...row,
+    uploads: uploads.count,
+    uploadedBytes: uploads.size,
+    foldersCreated: created.count,
+    activeSessions: sessions.active,
+    lastSignIn: sessions.lastSignIn,
+  };
+}
+
+export type UserDetail = NonNullable<Awaited<ReturnType<typeof getUserDetail>>>;
+
+/** Folders shared with a user directly (each grant also covers the subtree). */
+export async function listUserGrants(userId: string) {
+  return db
+    .select({
+      folderId: folders.id,
+      name: folders.name,
+      role: folderPermissions.role,
+      grantedAt: folderPermissions.createdAt,
+    })
+    .from(folderPermissions)
+    .innerJoin(folders, eq(folders.id, folderPermissions.folderId))
+    .where(and(eq(folderPermissions.userId, userId), isNull(folders.deletedAt)))
+    .orderBy(asc(folders.name));
+}
+
+export type UserGrant = Awaited<ReturnType<typeof listUserGrants>>[number];
 
 // ---------------------------------------------------------------------------
 // Search

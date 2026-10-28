@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, gt, inArray, isNotNull, isNull, like, or } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, like, ne, or, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -11,6 +11,7 @@ import {
   folderPermissions,
   folders,
   invitations,
+  session as sessions,
   shareLinkFiles,
   shareLinks,
   user,
@@ -528,18 +529,141 @@ export async function acceptInvite(input: z.input<typeof acceptSchema>) {
   return res;
 }
 
-/** Accounts invited before invite links existed: re-send their set-password email. */
-export async function resendInvite(userId: string) {
+// ---------------------------------------------------------------------------
+// Managing an account (admin)
+// ---------------------------------------------------------------------------
+
+const userIdSchema = z.string().min(1).max(100);
+
+const profileSchema = z.object({
+  name: z.string().trim().min(1, "Nhập tên").max(100, "Tên quá dài"),
+  email: z.email("Email không hợp lệ").transform((s) => s.toLowerCase()),
+});
+
+const passwordSchema = z
+  .string()
+  .min(8, "Mật khẩu tối thiểu 8 ký tự")
+  .max(128, "Mật khẩu quá dài");
+
+/** Admin-only: loads the account an admin is about to change. */
+async function requireManagedUser(userId: string) {
   const session = await requireSession();
+  if (!isAdmin(session)) throw new ForbiddenError();
+  const [target] = await db
+    .select({ id: user.id, email: user.email, role: user.role, banned: user.banned })
+    .from(user)
+    .where(eq(user.id, userIdSchema.parse(userId)));
+  if (!target) throw new NotFoundError("User không tồn tại");
+  return { session, target, self: target.id === session.user.id };
+}
+
+/** Someone has to be left who can manage users. */
+async function assertNotLastAdmin(target: { id: string; role: string | null; banned: boolean | null }) {
+  if (target.role !== "admin" || target.banned) return;
+  const [other] = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(and(eq(user.role, "admin"), ne(user.id, target.id), sql`${user.banned} is not true`))
+    .limit(1);
+  if (!other) throw new ForbiddenError("Phải còn ít nhất một admin đang hoạt động");
+}
+
+export async function updateUserProfile(userId: string, input: z.input<typeof profileSchema>) {
   return run(async () => {
-    if (!isAdmin(session)) throw new ForbiddenError();
-    const [target] = await db.select({ email: user.email }).from(user).where(eq(user.id, userId));
-    if (!target) throw new NotFoundError("User không tồn tại");
-    await auth.api.requestPasswordReset({
-      body: {
-        email: target.email,
-        redirectTo: `${process.env.BETTER_AUTH_URL}/reset-password`,
-      },
+    const { target } = await requireManagedUser(userId);
+    const { name, email } = profileSchema.parse(input);
+    if (email !== target.email) {
+      const [taken] = await db.select({ id: user.id }).from(user).where(eq(user.email, email));
+      if (taken) throw new ForbiddenError("Email này đã có tài khoản");
+    }
+    await db.batch([
+      db.update(user).set({ name, email }).where(eq(user.id, target.id)),
+      // A pending invite for the new address would otherwise create a second account.
+      db.delete(invitations).where(eq(invitations.email, email)),
+    ]);
+  });
+}
+
+export async function setUserRole(userId: string, rawRole: "user" | "admin") {
+  return run(async () => {
+    const { target, self } = await requireManagedUser(userId);
+    const role = z.enum(["user", "admin"]).parse(rawRole);
+    if (role === target.role) return;
+    if (self) throw new ForbiddenError("Không thể tự đổi vai trò của chính mình");
+    if (role === "user") await assertNotLastAdmin(target);
+    await db.update(user).set({ role }).where(eq(user.id, target.id));
+  });
+}
+
+/**
+ * Locks an account instead of deleting it (files and folders keep pointing at
+ * it): sign-in is refused, current sessions end, and public links it created
+ * stop working until it is unlocked (see `resolveShareLink`).
+ */
+export async function lockUser(userId: string, rawReason?: string) {
+  return run(async () => {
+    const { target, self } = await requireManagedUser(userId);
+    if (self) throw new ForbiddenError("Không thể tự khoá tài khoản của chính mình");
+    await assertNotLastAdmin(target);
+    const reason = z.string().trim().max(200, "Lý do quá dài").optional().parse(rawReason);
+    await db.batch([
+      db
+        .update(user)
+        .set({ banned: true, banReason: reason || null, banExpires: null })
+        .where(eq(user.id, target.id)),
+      db.delete(sessions).where(eq(sessions.userId, target.id)),
+    ]);
+  });
+}
+
+export async function unlockUser(userId: string) {
+  return run(async () => {
+    const { target } = await requireManagedUser(userId);
+    await db
+      .update(user)
+      .set({ banned: false, banReason: null, banExpires: null })
+      .where(eq(user.id, target.id));
+  });
+}
+
+/**
+ * Mails a set-password link: a reset for active accounts, the activation link
+ * for accounts invited before invite links existed.
+ */
+export async function sendPasswordReset(userId: string) {
+  return run(
+    async () => {
+      const { target } = await requireManagedUser(userId);
+      await auth.api.requestPasswordReset({
+        body: {
+          email: target.email,
+          redirectTo: `${process.env.BETTER_AUTH_URL}/reset-password`,
+        },
+      });
+    },
+    { refresh: false },
+  );
+}
+
+/** For when mail isn't set up: the admin picks a password and passes it on. */
+export async function setUserPassword(userId: string, rawPassword: string) {
+  return run(async () => {
+    const { target, self } = await requireManagedUser(userId);
+    if (self) throw new ForbiddenError("Đổi mật khẩu của chính mình bằng link đặt lại mật khẩu");
+    const newPassword = passwordSchema.parse(rawPassword);
+    await auth.api.setUserPassword({
+      body: { userId: target.id, newPassword },
+      headers: await headers(),
     });
+    await db.delete(sessions).where(eq(sessions.userId, target.id));
+  });
+}
+
+/** Signs the user out everywhere. */
+export async function revokeUserSessions(userId: string) {
+  return run(async () => {
+    const { target, self } = await requireManagedUser(userId);
+    if (self) throw new ForbiddenError("Không thể tự đăng xuất mọi phiên của chính mình ở đây");
+    await db.delete(sessions).where(eq(sessions.userId, target.id));
   });
 }

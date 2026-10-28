@@ -31,7 +31,7 @@ export const auth = betterAuth({
       );
     },
   },
-  plugins: [admin(), nextCookies()],
+  plugins: [admin({ bannedUserMessage: "Tài khoản đã bị khoá, liên hệ admin" }), nextCookies()],
 });
 
 export type Session = typeof auth.$Infer.Session;

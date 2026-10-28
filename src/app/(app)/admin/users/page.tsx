@@ -1,8 +1,10 @@
+import { ChevronRightIcon } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { InvitationList } from "@/components/admin/invitation-list";
 import { InviteUserButton } from "@/components/admin/invite-user-button";
-import { ResendInviteButton } from "@/components/admin/resend-invite-button";
+import { UserStatus } from "@/components/admin/user-status";
 import { PageHeader, PageShell } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -29,7 +31,7 @@ export default async function UsersPage() {
     <PageShell>
       <PageHeader
         title="Quản lý user"
-        description="Mời đồng nghiệp và theo dõi ai đã kích hoạt tài khoản."
+        description="Mời đồng nghiệp, đổi vai trò, khoá tài khoản."
         actions={<InviteUserButton />}
       />
       {invitations.length > 0 && <InvitationList invitations={invitations} />}
@@ -48,21 +50,30 @@ export default async function UsersPage() {
             </TableHeader>
             <TableBody>
               {users.map((u) => (
-                <TableRow key={u.id}>
-                  <TableCell className="font-medium">{u.name}</TableCell>
+                // The name link stretches over the whole row.
+                <TableRow key={u.id} className="relative">
+                  <TableCell className="font-medium">
+                    <Link
+                      href={`/admin/users/${u.id}`}
+                      className="outline-none after:absolute after:inset-0 after:rounded-[inherit] focus-visible:after:ring-2 focus-visible:after:ring-ring focus-visible:after:ring-inset"
+                    >
+                      {u.name}
+                    </Link>
+                    {u.id === session.user.id && (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">(Bạn)</span>
+                    )}
+                  </TableCell>
                   <TableCell>{u.email}</TableCell>
                   <TableCell>
                     {u.role === "admin" ? <Badge>Admin</Badge> : <Badge variant="secondary">Member</Badge>}
                   </TableCell>
                   <TableCell>
-                    {u.activated ? (
-                      "Đã kích hoạt"
-                    ) : (
-                      <span className="text-muted-foreground">Chờ đặt mật khẩu</span>
-                    )}
+                    <UserStatus user={u} />
                   </TableCell>
                   <TableCell>{formatDate(u.createdAt)}</TableCell>
-                  <TableCell>{!u.activated && <ResendInviteButton userId={u.id} />}</TableCell>
+                  <TableCell>
+                    <ChevronRightIcon className="size-4 text-muted-foreground" aria-hidden="true" />
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

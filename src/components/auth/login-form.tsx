@@ -25,7 +25,13 @@ export function LoginForm({ redirectTo }: { redirectTo: string }) {
     });
     if (error) {
       setPending(false);
-      setError(error.status === 401 ? "Sai email hoặc mật khẩu" : error.message);
+      setError(
+        error.status === 401
+          ? "Sai email hoặc mật khẩu"
+          : error.code === "BANNED_USER"
+            ? "Tài khoản đã bị khoá, liên hệ admin"
+            : error.message,
+      );
       return;
     }
     router.replace(redirectTo);
