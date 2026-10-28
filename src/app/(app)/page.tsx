@@ -32,8 +32,7 @@ export default async function HomePage() {
       {folders.length ? (
         <>
           <section aria-labelledby="folders-h" className="flex flex-col gap-4">
-            <SectionHeading id="folders-h">Folder</SectionHeading>
-            <FolderGrid folders={folders} isRoot currentUserId={session.user.id} />
+            <FolderGrid folders={folders} isRoot headingId="folders-h" currentUserId={session.user.id} />
           </section>
           {recent.length > 0 && (
             <section aria-labelledby="recent-h" className="flex flex-col gap-4">
