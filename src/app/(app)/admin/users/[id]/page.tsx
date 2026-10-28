@@ -8,6 +8,7 @@ import { UserLockCard } from "@/components/admin/user-lock-card";
 import { UserProfileForm } from "@/components/admin/user-profile-form";
 import { UserStatus } from "@/components/admin/user-status";
 import { PageHeader, PageShell } from "@/components/page-header";
+import { UserAvatar } from "@/components/user-avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Breadcrumb,
@@ -19,7 +20,6 @@ import {
 } from "@/components/ui/breadcrumb";
 import { isAdmin, requireSession } from "@/lib/auth";
 import { formatBytes, formatDate } from "@/lib/format";
-import { toneFor } from "@/lib/tones";
 import { getUserDetail, listUserGrants } from "@/server/queries";
 
 // Deduped between generateMetadata and the page.
@@ -61,13 +61,7 @@ export default async function UserPage(props: PageProps<"/admin/users/[id]">) {
         }
         title={
           <span className="flex items-center gap-4">
-            <span
-              aria-hidden="true"
-              className="flex size-14 shrink-0 items-center justify-center rounded-full font-sans text-lg font-semibold tracking-normal"
-              style={{ background: toneFor(detail.id).sky }}
-            >
-              {initials(detail.name)}
-            </span>
+            <UserAvatar user={detail} className="size-14 font-sans text-lg tracking-normal" />
             <span className="min-w-0">{detail.name}</span>
           </span>
         }
@@ -109,14 +103,6 @@ export default async function UserPage(props: PageProps<"/admin/users/[id]">) {
     </PageShell>
   );
 }
-
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(-2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
 
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (

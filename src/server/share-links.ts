@@ -71,9 +71,9 @@ export async function findSharedFile(link: ShareLink, root: Folder, fileId: stri
 
 // Visitors aren't signed in: don't tell them who uploaded what.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const { uploaderName, ...publicFileColumns } = fileColumns;
-const toPublicFileItem = (f: Omit<Parameters<typeof toFileItem>[0], "uploaderName">) =>
-  toFileItem({ ...f, uploaderName: "" });
+const { uploader, ...publicFileColumns } = fileColumns;
+const toPublicFileItem = (f: Omit<Parameters<typeof toFileItem>[0], "uploader">) =>
+  toFileItem({ ...f, uploader: null });
 
 /**
  * One folder of a folder link: the shared root or any live folder below it.
