@@ -103,7 +103,7 @@ export default async function FolderPage(props: PageProps<"/f/[folderId]">) {
         />
 
         {view.subfolders.length > 0 && (
-          <section aria-label="Folder con">
+          <section aria-label="Folder con" className="flex flex-col gap-3">
             <FolderGrid
               folders={view.subfolders.map((f) => ({ ...f, role: view.role }))}
               isRoot={false}
