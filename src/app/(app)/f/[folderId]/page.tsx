@@ -125,7 +125,7 @@ export default async function FolderPage(props: PageProps<"/f/[folderId]">) {
         {isEmpty &&
           (canEdit ? (
             <UploadArea folderId={view.folder.id}>
-              <EmptyFolder description="Kéo thả ảnh, video vào đây hoặc bấm để chọn file." />
+              <EmptyFolder description="Kéo thả ảnh, video, audio vào đây hoặc bấm để chọn file." />
             </UploadArea>
           ) : (
             <EmptyFolder description="Chưa có nội dung nào trong folder này." />

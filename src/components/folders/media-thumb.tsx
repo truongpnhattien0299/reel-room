@@ -1,8 +1,9 @@
 "use client";
 
-import { PlayIcon } from "lucide-react";
+import { MusicIcon, PlayIcon } from "lucide-react";
 import { useState } from "react";
 import { formatDuration } from "@/lib/format";
+import type { MediaKind } from "@/lib/media";
 import { toneFor } from "@/lib/tones";
 import { cn } from "@/lib/utils";
 import { useMediaUrls } from "./media-urls";
@@ -10,15 +11,18 @@ import { useMediaUrls } from "./media-urls";
 /**
  * A file's thumbnail, or a muted "contact sheet" tile when there is none
  * (formats the browser couldn't decode, or a thumb that failed to load).
+ * Audio never has a picture: it gets the tile with a note on it.
  */
 export function MediaThumb({
   id,
   hasThumb,
+  kind,
   className,
   imgClassName,
 }: {
   id: string;
   hasThumb: boolean;
+  kind?: MediaKind;
   className?: string;
   imgClassName?: string;
 }) {
@@ -38,7 +42,30 @@ export function MediaThumb({
       />
     );
   }
+  if (kind === "audio") return <AudioTile seed={id} className={className} />;
   return <ToneTile seed={id} className={className} />;
+}
+
+/** Stand-in artwork for an audio file. */
+export function AudioTile({
+  seed,
+  className,
+  iconClassName,
+}: {
+  seed: string;
+  className?: string;
+  iconClassName?: string;
+}) {
+  const tone = toneFor(seed);
+  return (
+    <span
+      aria-hidden="true"
+      className={cn("flex size-full items-center justify-center", className)}
+      style={{ background: `linear-gradient(160deg, ${tone.sky}, ${tone.ground})` }}
+    >
+      <MusicIcon className={cn("size-[28%] max-h-12 max-w-12 text-white/70", iconClassName)} />
+    </span>
+  );
 }
 
 /** Flat two-tone tile standing in for a picture. */
@@ -58,11 +85,14 @@ export function ToneTile({ seed, className }: { seed: string; className?: string
 
 export function DurationBadge({
   durationMs,
+  kind = "video",
   className,
 }: {
   durationMs: number | null;
+  kind?: "video" | "audio";
   className?: string;
 }) {
+  const Icon = kind === "audio" ? MusicIcon : PlayIcon;
   return (
     <span
       className={cn(
@@ -71,9 +101,9 @@ export function DurationBadge({
         className,
       )}
     >
-      <PlayIcon className="size-3 fill-current" aria-hidden="true" />
+      <Icon className={cn("size-3", kind === "video" && "fill-current")} aria-hidden="true" />
       {durationMs !== null && formatDuration(durationMs)}
-      <span className="sr-only">Video</span>
+      <span className="sr-only">{kind === "audio" ? "Audio" : "Video"}</span>
     </span>
   );
 }

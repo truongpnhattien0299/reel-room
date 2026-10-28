@@ -27,10 +27,10 @@ export function extractMediaInfo(file: File): Promise<MediaInfo> {
   return withSlot(async () => {
     try {
       if (file.type.startsWith("image/")) return await fromImage(file);
-      if (file.type.startsWith("video/")) {
+      if (file.type.startsWith("video/") || file.type.startsWith("audio/")) {
         const url = URL.createObjectURL(file);
         try {
-          return await fromVideo(url);
+          return file.type.startsWith("video/") ? await fromVideo(url) : await fromAudio(url);
         } finally {
           URL.revokeObjectURL(url);
         }
@@ -51,6 +51,7 @@ export function extractMediaInfoFromUrl(url: string, mimeType: string): Promise<
     try {
       if (mimeType.startsWith("image/")) return await fromImageUrl(url);
       if (mimeType.startsWith("video/")) return await fromVideo(url);
+      if (mimeType.startsWith("audio/")) return await fromAudio(url);
     } catch {
       // Undecodable format, or storage without CORS: no thumbnail.
     }
@@ -110,6 +111,33 @@ async function fromVideo(url: string): Promise<MediaInfo> {
   } finally {
     video.removeAttribute("src");
     video.load();
+  }
+}
+
+/** Audio has no picture: only the duration. */
+async function fromAudio(url: string): Promise<MediaInfo> {
+  const audio = document.createElement("audio");
+  audio.preload = "metadata";
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("timeout")), VIDEO_TIMEOUT_MS);
+      audio.onloadedmetadata = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      audio.onerror = () => {
+        clearTimeout(timer);
+        reject(new Error("decode"));
+      };
+      audio.src = url;
+    });
+    return {
+      thumb: null,
+      durationMs: Number.isFinite(audio.duration) ? Math.round(audio.duration * 1000) : undefined,
+    };
+  } finally {
+    audio.removeAttribute("src");
+    audio.load();
   }
 }
 

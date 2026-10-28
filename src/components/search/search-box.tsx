@@ -55,7 +55,7 @@ export function SearchBox({
           name="q"
           defaultValue={current}
           autoFocus={autoFocus}
-          placeholder="Tìm ảnh, video, folder…"
+          placeholder="Tìm ảnh, video, audio, folder…"
           enterKeyHint="search"
           className="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-[#8b919c] [&::-webkit-search-cancel-button]:hidden"
         />

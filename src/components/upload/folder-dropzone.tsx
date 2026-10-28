@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useUploads } from "./upload-provider";
 
-const ACCEPT = "image/*,video/*";
+const ACCEPT = "image/*,video/*,audio/*";
 
 /** Drop files anywhere over the folder view to upload them into it. */
 export function FolderDropzone({
@@ -104,7 +104,7 @@ export function UploadArea({ folderId, children }: { folderId: string; children:
       {children}
       <button
         type="button"
-        aria-label="Chọn ảnh, video để upload"
+        aria-label="Chọn ảnh, video, audio để upload"
         onClick={picker.open}
         className="absolute inset-0 cursor-pointer rounded-[18px] transition-colors outline-none hover:bg-primary/[0.04] hover:ring-1 hover:ring-primary/50 focus-visible:ring-2 focus-visible:ring-ring"
       />
