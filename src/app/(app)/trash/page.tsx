@@ -10,7 +10,8 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { requireSession } from "@/lib/auth";
-import { listTrash, TRASH_RETENTION_DAYS } from "@/server/queries";
+import { TRASH_RETENTION_DAYS } from "@/lib/trash";
+import { listTrash } from "@/server/queries";
 
 export const metadata: Metadata = { title: "Thùng rác" };
 

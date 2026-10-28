@@ -20,7 +20,7 @@ export function AudioPlayer({
 }: {
   file: { id: string; name: string; size: number; mimeType: string };
   src: string;
-  downloadUrl: string;
+  downloadUrl: string | null;
   folderName: string;
   onEnded?: () => void;
   onPrev?: () => void;
@@ -91,12 +91,15 @@ export function AudioPlayer({
         {state.error ? (
           <div className="flex flex-col items-center gap-3 text-center">
             <p className="text-sm text-muted-foreground">
-              Trình duyệt không phát được file này. Hãy tải về để nghe bằng ứng dụng khác.
+              Trình duyệt không phát được file này.
+              {downloadUrl && " Hãy tải về để nghe bằng ứng dụng khác."}
             </p>
-            <Button size="lg" nativeButton={false} render={<a href={downloadUrl} />}>
-              <DownloadIcon data-icon="inline-start" />
-              Tải về
-            </Button>
+            {downloadUrl && (
+              <Button size="lg" nativeButton={false} render={<a href={downloadUrl} />}>
+                <DownloadIcon data-icon="inline-start" />
+                Tải về
+              </Button>
+            )}
           </div>
         ) : (
           <div className="flex w-full flex-col gap-3">

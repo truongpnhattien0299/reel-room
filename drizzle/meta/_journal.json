@@ -36,6 +36,34 @@
       "when": 1791123227814,
       "tag": "0004_invitations",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793163067114,
+      "tag": "0005_activity",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793165143207,
+      "tag": "0006_share_link_options",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793174193795,
+      "tag": "0007_favorites",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793174899343,
+      "tag": "0008_file_sha256",
+      "breakpoints": true
     }
   ]
 }

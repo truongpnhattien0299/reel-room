@@ -2,10 +2,15 @@
 
 import {
   ChevronsUpDownIcon,
+  HardDriveIcon,
+  HistoryIcon,
   ImageIcon,
+  Link2Icon,
   LogOutIcon,
   PlusIcon,
   ShieldIcon,
+  SparklesIcon,
+  StarIcon,
   UserRoundIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -47,10 +52,12 @@ export function AppSidebar({
   rootFolders,
   user,
   isAdmin,
+  version,
 }: {
   rootFolders: FolderSummary[];
   user: { id: string; name: string; email: string; image: string | null };
   isAdmin: boolean;
+  version: string;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -84,6 +91,26 @@ export function AppSidebar({
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
+                  isActive={pathname === "/favorites"}
+                  className={itemClass}
+                  render={<Link href="/favorites" />}
+                >
+                  <StarIcon className={pathname === "/favorites" ? "text-primary" : undefined} />
+                  <span>Yêu thích</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname === "/links"}
+                  className={itemClass}
+                  render={<Link href="/links" />}
+                >
+                  <Link2Icon className={pathname === "/links" ? "text-primary" : undefined} />
+                  <span>Link chia sẻ</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
                   isActive={pathname === "/trash"}
                   className={itemClass}
                   render={<Link href="/trash" />}
@@ -93,18 +120,44 @@ export function AppSidebar({
                 </SidebarMenuButton>
               </SidebarMenuItem>
               {isAdmin && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    isActive={pathname.startsWith("/admin")}
-                    className={itemClass}
-                    render={<Link href="/admin/users" />}
-                  >
-                    <ShieldIcon
-                      className={pathname.startsWith("/admin") ? "text-primary" : undefined}
-                    />
-                    <span>Quản lý user</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+                <>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={pathname.startsWith("/admin/users")}
+                      className={itemClass}
+                      render={<Link href="/admin/users" />}
+                    >
+                      <ShieldIcon
+                        className={pathname.startsWith("/admin/users") ? "text-primary" : undefined}
+                      />
+                      <span>Quản lý user</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={pathname === "/admin/storage"}
+                      className={itemClass}
+                      render={<Link href="/admin/storage" />}
+                    >
+                      <HardDriveIcon
+                        className={pathname === "/admin/storage" ? "text-primary" : undefined}
+                      />
+                      <span>Dung lượng</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={pathname === "/admin/activity"}
+                      className={itemClass}
+                      render={<Link href="/admin/activity" />}
+                    >
+                      <HistoryIcon
+                        className={pathname === "/admin/activity" ? "text-primary" : undefined}
+                      />
+                      <span>Hoạt động</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </>
               )}
             </SidebarMenu>
           </SidebarGroupContent>
@@ -170,6 +223,11 @@ export function AppSidebar({
             <DropdownMenuItem render={<Link href="/profile" />}>
               <UserRoundIcon />
               Hồ sơ của tôi
+            </DropdownMenuItem>
+            <DropdownMenuItem render={<Link href="/releases" />}>
+              <SparklesIcon />
+              Có gì mới
+              <span className="ml-auto font-mono text-xs text-muted-foreground">v{version}</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={async () => {

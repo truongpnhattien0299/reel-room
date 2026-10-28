@@ -1,6 +1,6 @@
 {
   "name": "reelroom",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,6 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
@@ -23,8 +25,10 @@
     "@uppy/core": "^6.2.0",
     "better-auth": "^1.7.7",
     "class-variance-authority": "^0.7.1",
+    "client-zip": "^2.5.1",
     "cn": "^0.4.0",
     "drizzle-orm": "^0.45.3",
+    "hash-wasm": "^4.12.0",
     "lucide-react": "^1.50.0",
     "next": "16.3.8",
     "next-themes": "^0.4.6",
@@ -39,6 +43,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.12",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/nodemailer": "^8.0.2",
@@ -50,7 +55,8 @@
     "eslint-config-next": "16.3.8",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^5.0.5"
   },
   "packageManager": "pnpm@11.13.1",
   "engines": {

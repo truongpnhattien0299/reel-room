@@ -1,17 +1,25 @@
 "use client";
 
-import { Link2Icon, ListChecksIcon, XIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { DownloadIcon, FolderInputIcon, Link2Icon, ListChecksIcon, Trash2Icon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { startZipDownload } from "@/components/download-progress";
 import { MediaViewer } from "@/components/viewer/media-viewer";
 import { type MediaKind, mediaKind } from "@/lib/media";
+import { FILE_SORTS, type FileSort, sortFiles, useStoredSort } from "@/lib/sort";
+import { TRASH_RETENTION_DAYS } from "@/lib/trash";
 import { cn } from "@/lib/utils";
-import { renameFile, trashFile } from "@/server/actions";
+import { renameFile, restoreFiles, trashFile, trashFiles } from "@/server/actions";
 import type { FileItem } from "@/server/queries";
 import { ConfirmDialog } from "./confirm-dialog";
 import { FileCard } from "./file-card";
+import { useMediaUrls } from "./media-urls";
+import { MoveDialog } from "./move-dialog";
 import { NameDialog } from "./name-dialog";
+import { SelectionToolbar, type ToolbarAction } from "./selection-toolbar";
 import { ShareFilesDialog } from "./share-links";
+import { type SortOption, SortMenu } from "./sort-menu";
 import { backfillThumbnail } from "./thumbnail-backfill";
 
 type Filter = "all" | MediaKind;
@@ -23,35 +31,61 @@ const EMPTY_LABEL: Record<Filter, string> = {
   audio: "audio",
 };
 
+const SORT_OPTIONS: SortOption<FileSort>[] = [
+  { value: "newest", label: "Mới nhất" },
+  { value: "oldest", label: "Cũ nhất" },
+  { value: "name-asc", label: "Tên A → Z", short: "Tên A→Z" },
+  { value: "name-desc", label: "Tên Z → A", short: "Tên Z→A" },
+  { value: "size", label: "Dung lượng lớn nhất", short: "Lớn nhất" },
+  { value: "duration", label: "Thời lượng dài nhất", short: "Dài nhất" },
+];
+
 export function FileGrid({
   files,
   canEdit,
-  shareFolderId,
+  folderId,
   folderName,
   initialFileId,
 }: {
   files: FileItem[];
   canEdit: boolean;
-  /** Lets the user pick files and share them by link (they live in this folder). */
-  shareFolderId?: string;
+  /**
+   * The folder the files sit in. With `canEdit` the user may pick files and
+   * move, trash or share them by link.
+   */
+  folderId?: string;
   folderName: string;
   /** Open this file in the viewer on load (links from "recent uploads"). */
   initialFileId?: string;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
+  const [savedSort, setSort] = useStoredSort("reelroom:sort:files", FILE_SORTS, "newest");
+  // Only video and audio have a duration to sort by.
+  const timed = filter === "video" || filter === "audio";
+  const sort = savedSort === "duration" && !timed ? "newest" : savedSort;
+  const sortOptions = timed ? SORT_OPTIONS : SORT_OPTIONS.filter((o) => o.value !== "duration");
   const [previewId, setPreviewId] = useState<string | null>(
     initialFileId && files.some((f) => f.id === initialFileId) ? initialFileId : null,
   );
   const [renaming, setRenaming] = useState<FileItem | null>(null);
   const [deleting, setDeleting] = useState<FileItem | null>(null);
-  // Null when not picking files to share.
+  // `bulk`: the picked files, so a successful move ends the selection.
+  const [moving, setMoving] = useState<{ ids: string[]; label: string; bulk?: boolean } | null>(null);
+  const [trashing, setTrashing] = useState<string[] | null>(null);
+  const canManage = canEdit && folderId !== undefined;
+  const urls = useMediaUrls();
+  // Null when not picking files.
   const [selected, setSelected] = useState<Set<string> | null>(null);
+  // Anchor for Shift + click ranges.
+  const lastClicked = useRef<string | null>(null);
   // "done" once the link exists: closing the dialog then ends the selection.
   const [sharing, setSharing] = useState<"open" | "done" | null>(null);
 
   const counts: Record<Filter, number> = { all: files.length, image: 0, video: 0, audio: 0 };
   for (const f of files) counts[mediaKind(f)]++;
-  const visible = filter === "all" ? files : files.filter((f) => mediaKind(f) === filter);
+  // Grid, viewer arrows and Shift + click ranges all follow this order.
+  const sorted = useMemo(() => sortFiles(files, sort), [files, sort]);
+  const visible = filter === "all" ? sorted : sorted.filter((f) => mediaKind(f) === filter);
   const previewIndex = previewId ? visible.findIndex((f) => f.id === previewId) : -1;
   const previewFile = previewIndex === -1 ? null : visible[previewIndex];
 
@@ -66,21 +100,82 @@ export function FileGrid({
   const picked = selected ? files.filter((f) => selected.has(f.id)).map((f) => f.id) : [];
   const allVisiblePicked = selected !== null && visible.every((f) => selected.has(f.id));
 
-  function toggle(id: string) {
+  /** Click toggles one file; Shift + click picks every visible file from the last click. */
+  function pick(id: string, range: boolean) {
+    const from = range && lastClicked.current ? visible.findIndex((f) => f.id === lastClicked.current) : -1;
+    const to = visible.findIndex((f) => f.id === id);
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
+      if (from !== -1 && to !== -1) {
+        for (const f of visible.slice(Math.min(from, to), Math.max(from, to) + 1)) next.add(f.id);
+      } else if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+    lastClicked.current = id;
   }
 
+  function exitSelection() {
+    setSelected(null);
+    lastClicked.current = null;
+  }
+
+  const dialogOpen = sharing !== null || moving !== null || trashing !== null;
   useEffect(() => {
-    if (selected === null || sharing) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setSelected(null);
+    if (selected === null || dialogOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") exitSelection();
+      const typing = e.target instanceof HTMLElement && e.target.closest("input, textarea, [contenteditable]");
+      if (e.key.toLowerCase() === "a" && (e.metaKey || e.ctrlKey) && !typing) {
+        e.preventDefault();
+        setSelected((prev) => new Set([...(prev ?? []), ...visible.map((f) => f.id)]));
+      }
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selected, sharing]);
+  }, [selected, dialogOpen, visible]);
+
+  async function trashPicked(ids: string[]) {
+    const res = await trashFiles(ids);
+    if (res.error) return res;
+    exitSelection();
+    toast.success(`Đã chuyển ${ids.length} file vào thùng rác`, {
+      action: {
+        label: "Hoàn tác",
+        onClick: async () => {
+          const undo = await restoreFiles(ids);
+          if (undo.error) toast.error(undo.error);
+          else toast.success(`Đã khôi phục ${ids.length} file`);
+        },
+      },
+    });
+    return res;
+  }
+
+  function downloadPicked() {
+    const { download, zip } = urls;
+    if (!download || !zip) return;
+    // One file needs no zip.
+    if (picked.length === 1) window.location.assign(download(picked[0]));
+    else void startZipDownload(zip, { fileIds: picked }, `${folderName} - ${picked.length} file.zip`);
+    exitSelection();
+  }
+
+  const toolbarActions: ToolbarAction[] = [
+    ...(urls.download ? [{ label: "Tải về", icon: DownloadIcon, primary: true, onClick: downloadPicked }] : []),
+    ...(canManage
+      ? [
+          {
+            label: "Di chuyển",
+            icon: FolderInputIcon,
+            primary: true,
+            onClick: () => setMoving({ ids: picked, label: `${picked.length} file`, bulk: true }),
+          },
+          { label: "Tạo link", icon: Link2Icon, onClick: () => setSharing("open") },
+          { label: "Xoá", icon: Trash2Icon, destructive: true, onClick: () => setTrashing(picked) },
+        ]
+      : []),
+  ];
 
   const chips: { value: Filter; label: string }[] = [
     { value: "all", label: "Tất cả" },
@@ -115,27 +210,32 @@ export function FileGrid({
             </button>
           ))}
         </div>
-        {shareFolderId &&
-          (selected === null ? (
-            <Button variant="outline" size="lg" onClick={() => setSelected(new Set())}>
-              <ListChecksIcon data-icon="inline-start" />
-              Chọn
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="lg"
-              onClick={() =>
-                setSelected(
-                  allVisiblePicked
-                    ? new Set([...selected].filter((id) => !visible.some((f) => f.id === id)))
-                    : new Set([...selected, ...visible.map((f) => f.id)]),
-                )
-              }
-            >
-              {allVisiblePicked ? "Bỏ chọn tất cả" : "Chọn tất cả"}
-            </Button>
-          ))}
+        <div className="flex items-center gap-2">
+          {files.length > 1 && <SortMenu value={sort} options={sortOptions} onChange={setSort} />}
+          {/* Picking only leads to toolbar actions; without any, there's nothing to pick for. */}
+          {files.length > 0 &&
+            (urls.download !== null || canManage) &&
+            (selected === null ? (
+              <Button variant="outline" size="lg" onClick={() => setSelected(new Set())}>
+                <ListChecksIcon data-icon="inline-start" />
+                Chọn
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="lg"
+                onClick={() =>
+                  setSelected(
+                    allVisiblePicked
+                      ? new Set([...selected].filter((id) => !visible.some((f) => f.id === id)))
+                      : new Set([...selected, ...visible.map((f) => f.id)]),
+                  )
+                }
+              >
+                {allVisiblePicked ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+              </Button>
+            ))}
+        </div>
       </div>
 
       {visible.length === 0 ? (
@@ -149,8 +249,9 @@ export function FileGrid({
               key={f.id}
               file={f}
               selected={selected ? selected.has(f.id) : undefined}
-              onOpen={() => (selected ? toggle(f.id) : setPreviewId(f.id))}
+              onOpen={(e) => (selected ? pick(f.id, e.shiftKey) : setPreviewId(f.id))}
               onRename={canEdit ? () => setRenaming(f) : undefined}
+              onMove={canManage ? () => setMoving({ ids: [f.id], label: `“${f.name}”` }) : undefined}
               onDelete={canEdit ? () => setDeleting(f) : undefined}
             />
           ))}
@@ -163,36 +264,22 @@ export function FileGrid({
         index={previewIndex === -1 ? null : previewIndex}
         onIndexChange={(i) => setPreviewId(i === null ? null : visible[i].id)}
         onRename={canEdit ? (f) => setRenaming(f) : undefined}
+        onMove={canManage ? (f) => setMoving({ ids: [f.id], label: `“${f.name}”` }) : undefined}
         onDelete={canEdit ? (f) => setDeleting(f) : undefined}
       />
 
-      {selected && shareFolderId && (
-        <div
-          role="toolbar"
-          aria-label="File đã chọn"
-          className="fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-2xl bg-popover py-2 pr-2 pl-4 shadow-[0_24px_60px_rgba(0,0,0,0.5)] ring-1 ring-[#2a2e37] sm:bottom-8"
-        >
-          <span className="pr-2 text-sm whitespace-nowrap">
-            <span className="font-mono font-semibold">{picked.length}</span> đã chọn
-          </span>
-          <Button size="lg" disabled={picked.length === 0} onClick={() => setSharing("open")}>
-            <Link2Icon data-icon="inline-start" />
-            Tạo link
-          </Button>
-          <Button variant="ghost" size="icon-lg" aria-label="Thoát chế độ chọn" onClick={() => setSelected(null)}>
-            <XIcon />
-          </Button>
-        </div>
+      {selected && (
+        <SelectionToolbar count={picked.length} actions={toolbarActions} onExit={exitSelection} />
       )}
-      {sharing && shareFolderId && (
+      {sharing && folderId && (
         <ShareFilesDialog
           open
-          folderId={shareFolderId}
+          folderId={folderId}
           fileIds={picked}
           onCreated={() => setSharing("done")}
           onOpenChange={(open) => {
             if (open) return;
-            if (sharing === "done") setSelected(null);
+            if (sharing === "done") exitSelection();
             setSharing(null);
           }}
         />
@@ -205,6 +292,26 @@ export function FileGrid({
           submitLabel="Lưu"
           defaultValue={renaming.name}
           onSubmit={(name) => renameFile(renaming.id, name)}
+        />
+      )}
+      {moving && folderId && (
+        <MoveDialog
+          open
+          // Like trashing: the viewer moves on once the file drops out of the list.
+          onOpenChange={(open) => !open && setMoving(null)}
+          items={{ kind: "files", ids: moving.ids, label: moving.label }}
+          sourceFolderId={folderId}
+          onMoved={moving.bulk ? exitSelection : undefined}
+        />
+      )}
+      {trashing && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => !open && setTrashing(null)}
+          title={`Chuyển ${trashing.length} file vào thùng rác?`}
+          description={`Có thể khôi phục trong ${TRASH_RETENTION_DAYS} ngày.`}
+          confirmLabel="Xoá"
+          onConfirm={() => trashPicked(trashing)}
         />
       )}
       {deleting && (

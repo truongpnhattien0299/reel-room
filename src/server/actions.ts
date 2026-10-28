@@ -1,22 +1,25 @@
 "use server";
 
-import { and, eq, gt, inArray, isNotNull, isNull, like, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, like, ne, or, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/db";
 import {
+  type Folder,
   files,
   folderPermissions,
+  favorites,
   folders,
   invitations,
   session as sessions,
   shareLinkFiles,
   shareLinks,
   user,
+  type FolderRole,
 } from "@/db/schema";
-import { auth, isAdmin, requireSession } from "@/lib/auth";
+import { auth, isAdmin, requireSession, type Session } from "@/lib/auth";
 import { avatarKey, deleteObject, headObject, presignUploadRequest, thumbKey } from "@/lib/r2";
 import {
   ForbiddenError,
@@ -25,10 +28,19 @@ import {
   requireFolderRole,
   roleAtLeast,
 } from "@/server/permissions";
+import { type ActivityFilter, type ActivityMeta, listActivity, logActivity, someNames } from "@/server/activity";
 import { INVITE_TTL_DAYS, newInviteToken, resolveInvitation, sendInviteEmail } from "@/server/invitations";
 import { purgeFiles, purgeFolderTree } from "@/server/purge";
-import { listFolderMembers } from "@/server/queries";
-import { listShareLinks, newShareToken } from "@/server/share-links";
+import { grantedOn, listFolderMembers } from "@/server/queries";
+import {
+  hashLinkPassword,
+  LOCK_MINUTES,
+  linkPasswordSchema,
+  MAX_ATTEMPTS,
+  setUnlockCookie,
+  verifyLinkPassword,
+} from "@/server/link-password";
+import { listShareLinkFiles, listShareLinks, newShareToken, resolveShareLink } from "@/server/share-links";
 
 export type ActionResult<T = void> = { error?: string; data?: T };
 
@@ -70,6 +82,26 @@ function isUniqueViolation(err: unknown) {
   return e?.code === "23505" || e?.cause?.code === "23505";
 }
 
+/** One log row per folder for a bulk action on files that may span folders. */
+function logPerFolder(
+  session: Session,
+  action: "file.trash" | "file.restore",
+  rows: { name: string; folder: Pick<Folder, "id" | "path" | "name"> }[],
+) {
+  const byFolder = new Map<string, { folder: Pick<Folder, "id" | "path" | "name">; names: string[] }>();
+  for (const r of rows) {
+    const entry = byFolder.get(r.folder.id) ?? { folder: r.folder, names: [] };
+    entry.names.push(r.name);
+    byFolder.set(r.folder.id, entry);
+  }
+  return [...byFolder.values()].map(({ folder, names }) =>
+    logActivity(session, action, {
+      folder,
+      meta: { names: someNames(names), count: names.length, folderName: folder.name },
+    }),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Folders
 // ---------------------------------------------------------------------------
@@ -89,17 +121,19 @@ export async function createFolder(parentId: string | null, rawName: string) {
           role: "owner",
           grantedBy: session.user.id,
         }),
+        logActivity(session, "folder.create", { folder: { id, path: id }, meta: { name } }),
       ]);
       return;
     }
     const { folder: parent } = await requireFolderRole(session, parentId, "editor");
-    await db.insert(folders).values({
-      id,
-      name,
-      parentId: parent.id,
-      path: `${parent.path}/${id}`,
-      createdBy: session.user.id,
-    });
+    const path = `${parent.path}/${id}`;
+    await db.batch([
+      db.insert(folders).values({ id, name, parentId: parent.id, path, createdBy: session.user.id }),
+      logActivity(session, "folder.create", {
+        folder: { id, path },
+        meta: { name, folderName: parent.name },
+      }),
+    ]);
   });
 }
 
@@ -107,8 +141,12 @@ export async function renameFolder(folderId: string, rawName: string) {
   const session = await requireSession();
   return run(async () => {
     const name = nameSchema.parse(rawName);
-    await requireFolderRole(session, folderId, "editor");
-    await db.update(folders).set({ name }).where(eq(folders.id, folderId));
+    const { folder } = await requireFolderRole(session, folderId, "editor");
+    if (name === folder.name) return;
+    await db.batch([
+      db.update(folders).set({ name }).where(eq(folders.id, folderId)),
+      logActivity(session, "folder.rename", { folder, meta: { from: folder.name, to: name } }),
+    ]);
   });
 }
 
@@ -140,6 +178,7 @@ export async function trashFolder(folderId: string) {
         .update(folders)
         .set({ deletedAt: now, deletedBy: session.user.id })
         .where(and(inSubtree, isNull(folders.deletedAt))),
+      logActivity(session, "folder.trash", { folder, meta: { name: folder.name } }),
     ]);
   });
 }
@@ -157,16 +196,26 @@ export async function shareFolder(folderId: string, input: z.input<typeof shareS
   const session = await requireSession();
   return run(async () => {
     const { email, role } = shareSchema.parse(input);
-    await requireFolderRole(session, folderId, "owner");
-    const [target] = await db.select({ id: user.id }).from(user).where(eq(user.email, email));
+    const { folder } = await requireFolderRole(session, folderId, "owner");
+    const [target] = await db
+      .select({ id: user.id, name: user.name })
+      .from(user)
+      .where(eq(user.email, email));
     if (!target) throw new NotFoundError("Không có user nào với email này");
-    await db
-      .insert(folderPermissions)
-      .values({ folderId, userId: target.id, role, grantedBy: session.user.id })
-      .onConflictDoUpdate({
-        target: [folderPermissions.folderId, folderPermissions.userId],
-        set: { role, grantedBy: session.user.id },
-      });
+    await db.batch([
+      db
+        .insert(folderPermissions)
+        .values({ folderId, userId: target.id, role, grantedBy: session.user.id })
+        .onConflictDoUpdate({
+          target: [folderPermissions.folderId, folderPermissions.userId],
+          set: { role, grantedBy: session.user.id },
+        }),
+      logActivity(session, "share.grant", {
+        folder,
+        targetUserId: target.id,
+        meta: { name: target.name, role, folderName: folder.name },
+      }),
+    ]);
   });
 }
 
@@ -178,13 +227,26 @@ export async function getFolderMembers(folderId: string) {
 export async function revokeShare(folderId: string, userId: string) {
   const session = await requireSession();
   return run(async () => {
-    await requireFolderRole(session, folderId, "owner");
+    const { folder } = await requireFolderRole(session, folderId, "owner");
     if (userId === session.user.id) {
       throw new ForbiddenError("Không thể tự gỡ quyền của chính mình");
     }
-    await db
-      .delete(folderPermissions)
+    const [member] = await db
+      .select({ name: user.name })
+      .from(folderPermissions)
+      .innerJoin(user, eq(user.id, folderPermissions.userId))
       .where(and(eq(folderPermissions.folderId, folderId), eq(folderPermissions.userId, userId)));
+    if (!member) return;
+    await db.batch([
+      db
+        .delete(folderPermissions)
+        .where(and(eq(folderPermissions.folderId, folderId), eq(folderPermissions.userId, userId))),
+      logActivity(session, "share.revoke", {
+        folder,
+        targetUserId: userId,
+        meta: { name: member.name, folderName: folder.name },
+      }),
+    ]);
   });
 }
 
@@ -195,27 +257,44 @@ export async function revokeShare(folderId: string, userId: string) {
 /** Custom expiry dates are capped; "never" is a separate, explicit choice. */
 const MAX_LINK_DAYS = 365;
 
+const expirySchema = z
+  .date()
+  .nullable()
+  .refine((d) => d === null || d.getTime() > Date.now(), "Thời điểm hết hạn phải ở tương lai")
+  .refine(
+    (d) => d === null || d.getTime() <= Date.now() + MAX_LINK_DAYS * 86_400_000,
+    `Thời hạn tối đa ${MAX_LINK_DAYS} ngày`,
+  );
+
 const shareLinkSchema = z.object({
   folderId: z.uuid(),
   /** Share just these files (all in `folderId`); omit to share the whole folder. */
   fileIds: z.array(z.uuid()).min(1, "Chọn ít nhất một file").max(500, "Chọn tối đa 500 file").optional(),
-  expiresAt: z
-    .date()
-    .nullable()
-    .refine((d) => d === null || d.getTime() > Date.now(), "Thời điểm hết hạn phải ở tương lai")
-    .refine(
-      (d) => d === null || d.getTime() <= Date.now() + MAX_LINK_DAYS * 86_400_000,
-      `Thời hạn tối đa ${MAX_LINK_DAYS} ngày`,
-    ),
+  expiresAt: expirySchema,
+  /** Visitors must type it first; omit for none. */
+  password: linkPasswordSchema.optional(),
+  allowDownload: z.boolean().default(true),
 });
 
 export async function createShareLink(input: z.input<typeof shareLinkSchema>) {
   const session = await requireSession();
   return run(async () => {
-    const { folderId, fileIds, expiresAt } = shareLinkSchema.parse(input);
-    await requireFolderRole(session, folderId, "editor");
+    const { folderId, fileIds, expiresAt, password, allowDownload } = shareLinkSchema.parse(input);
+    const { folder } = await requireFolderRole(session, folderId, "editor");
     const id = crypto.randomUUID();
     const token = newShareToken();
+    const log = (count?: number) =>
+      logActivity(session, "link.create", {
+        folder,
+        meta: {
+          folderName: folder.name,
+          kind: fileIds ? "files" : "folder",
+          count,
+          expiresAt: expiresAt?.toISOString() ?? null,
+          ...(password && { password: "set" as const }),
+          ...(!allowDownload && { allowDownload }),
+        },
+      });
     const link = db.insert(shareLinks).values({
       id,
       token,
@@ -223,9 +302,11 @@ export async function createShareLink(input: z.input<typeof shareLinkSchema>) {
       folderId,
       expiresAt,
       createdBy: session.user.id,
+      passwordHash: password ? await hashLinkPassword(password) : null,
+      allowDownload,
     });
     if (!fileIds) {
-      await link;
+      await db.batch([link, log()]);
       return { token };
     }
     const unique = [...new Set(fileIds)];
@@ -244,6 +325,7 @@ export async function createShareLink(input: z.input<typeof shareLinkSchema>) {
     await db.batch([
       link,
       db.insert(shareLinkFiles).values(unique.map((fileId) => ({ linkId: id, fileId }))),
+      log(unique.length),
     ]);
     return { token };
   });
@@ -254,21 +336,183 @@ export async function getShareLinks(folderId: string) {
   return listShareLinks(session, folderId);
 }
 
+/**
+ * Asserts the user may change or revoke every one of these links: its creator
+ * (still an editor of the folder) or an owner. Works on trashed folders too,
+ * so their links can still be cleaned up.
+ */
+async function requireLinkManager(session: Session, linkIds: string[]) {
+  const links = await db
+    .select({
+      id: shareLinks.id,
+      createdBy: shareLinks.createdBy,
+      folderId: folders.id,
+      folderName: folders.name,
+      path: folders.path,
+      deletedAt: folders.deletedAt,
+    })
+    .from(shareLinks)
+    .innerJoin(folders, eq(folders.id, shareLinks.folderId))
+    .where(inArray(shareLinks.id, linkIds));
+  if (links.length !== new Set(linkIds).size) throw new NotFoundError("Link không tồn tại");
+  const roles = new Map<string, Promise<FolderRole | null>>();
+  for (const link of links) {
+    if (!roles.has(link.folderId)) roles.set(link.folderId, getEffectiveRole(session, link));
+    const role = await roles.get(link.folderId)!;
+    if (role === null) throw new NotFoundError("Link không tồn tại");
+    if (!roleAtLeast(role, "editor") || (link.createdBy !== session.user.id && role !== "owner")) {
+      throw new ForbiddenError("Chỉ người tạo link hoặc chủ sở hữu folder mới thay đổi được link");
+    }
+  }
+  return links;
+}
+
+const linkIdsSchema = z.array(z.uuid()).min(1, "Chọn ít nhất một link").max(500, "Chọn tối đa 500 link");
+
 /** The link's creator or a folder owner may revoke it. */
 export async function deleteShareLink(linkId: string) {
+  return deleteShareLinks([linkId]);
+}
+
+export async function deleteShareLinks(linkIds: string[]) {
   const session = await requireSession();
   return run(async () => {
-    const [link] = await db
-      .select({ folderId: shareLinks.folderId, createdBy: shareLinks.createdBy })
-      .from(shareLinks)
-      .where(eq(shareLinks.id, z.uuid().parse(linkId)));
-    if (!link) throw new NotFoundError("Link không tồn tại");
-    const { role } = await requireFolderRole(session, link.folderId, "editor");
-    if (link.createdBy !== session.user.id && role !== "owner") {
-      throw new ForbiddenError("Chỉ người tạo link hoặc chủ sở hữu folder mới thu hồi được");
+    const ids = linkIdsSchema.parse(linkIds);
+    const links = await requireLinkManager(session, ids);
+    const byFolder = new Map<string, { folder: { id: string; path: string }; name: string; count: number }>();
+    for (const l of links) {
+      const entry = byFolder.get(l.folderId) ?? { folder: { id: l.folderId, path: l.path }, name: l.folderName, count: 0 };
+      entry.count++;
+      byFolder.set(l.folderId, entry);
     }
-    await db.delete(shareLinks).where(eq(shareLinks.id, linkId));
+    await db.batch([
+      db.delete(shareLinks).where(inArray(shareLinks.id, ids)),
+      ...[...byFolder.values()].map(({ folder, name, count }) =>
+        logActivity(session, "link.revoke", { folder, meta: { folderName: name, count } }),
+      ),
+    ]);
   });
+}
+
+const linkUpdateSchema = z.object({
+  expiresAt: expirySchema.optional(),
+  /** A new password, or null to remove it. */
+  password: linkPasswordSchema.nullable().optional(),
+  allowDownload: z.boolean().optional(),
+});
+
+/** Changes any of a link's expiry, password and download setting. */
+export async function updateShareLink(linkId: string, input: z.input<typeof linkUpdateSchema>) {
+  const session = await requireSession();
+  return run(async () => {
+    const [link] = await requireLinkManager(session, [z.uuid().parse(linkId)]);
+    if (link.deletedAt) throw new ForbiddenError("Folder đang trong thùng rác, hãy khôi phục trước");
+    const { expiresAt, password, allowDownload } = linkUpdateSchema.parse(input);
+    const changes: Partial<typeof shareLinks.$inferInsert> = {};
+    const meta: ActivityMeta = { folderName: link.folderName };
+    if (expiresAt !== undefined) {
+      changes.expiresAt = expiresAt;
+      meta.expiresAt = expiresAt?.toISOString() ?? null;
+    }
+    if (password !== undefined) {
+      // A new hash also voids every visitor's unlock cookie.
+      changes.passwordHash = password === null ? null : await hashLinkPassword(password);
+      changes.failedAttempts = 0;
+      changes.lockedUntil = null;
+      meta.password = password === null ? "removed" : "set";
+    }
+    if (allowDownload !== undefined) {
+      changes.allowDownload = allowDownload;
+      meta.allowDownload = allowDownload;
+    }
+    if (Object.keys(changes).length === 0) return;
+    await db.batch([
+      db.update(shareLinks).set(changes).where(eq(shareLinks.id, link.id)),
+      logActivity(session, "link.update", { folder: { id: link.folderId, path: link.path }, meta }),
+    ]);
+  });
+}
+
+/**
+ * A visitor types a link's password. After `MAX_ATTEMPTS` wrong ones in a row
+ * the link refuses every try for `LOCK_MINUTES`. That lock is per link, so
+ * someone guessing can briefly shut out the real recipient too; fine for a
+ * small private app, and it keeps guessing slow.
+ */
+export async function unlockShareLink(token: string, password: string) {
+  return run(async () => {
+    const resolved = await resolveShareLink(token);
+    if (resolved.status === "ok") return;
+    if (resolved.status !== "locked") throw new NotFoundError("Link không còn hiệu lực");
+    const [link] = await db
+      .select({
+        id: shareLinks.id,
+        passwordHash: shareLinks.passwordHash,
+        expiresAt: shareLinks.expiresAt,
+        lockedUntil: shareLinks.lockedUntil,
+      })
+      .from(shareLinks)
+      .where(eq(shareLinks.id, resolved.linkId));
+    const now = new Date();
+    const lockedFor = (until: Date) =>
+      new ForbiddenError(`Nhập sai quá nhiều lần. Thử lại sau ${Math.ceil((until.getTime() - now.getTime()) / 60_000)} phút`);
+    if (link.lockedUntil && link.lockedUntil > now) throw lockedFor(link.lockedUntil);
+
+    const ok = await verifyLinkPassword(z.string().max(1000).parse(password), link.passwordHash!);
+    if (ok) {
+      await db.update(shareLinks).set({ failedAttempts: 0, lockedUntil: null }).where(eq(shareLinks.id, link.id));
+      await setUnlockCookie(link);
+      return;
+    }
+    // One statement, so tries sent at once still all count.
+    const until = new Date(now.getTime() + LOCK_MINUTES * 60_000);
+    const reachesLimit = sql`${shareLinks.failedAttempts} + 1 >= ${MAX_ATTEMPTS}`;
+    const [after] = await db
+      .update(shareLinks)
+      .set({
+        failedAttempts: sql`case when ${reachesLimit} then 0 else ${shareLinks.failedAttempts} + 1 end`,
+        lockedUntil: sql`case when ${reachesLimit} then ${until.toISOString()}::timestamp else null end`,
+      })
+      .where(eq(shareLinks.id, link.id))
+      .returning({ lockedUntil: shareLinks.lockedUntil });
+    if (after.lockedUntil) throw lockedFor(after.lockedUntil);
+    throw new ForbiddenError("Mật khẩu không đúng");
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Favorites
+// ---------------------------------------------------------------------------
+
+const favoriteTargetSchema = z.union([z.object({ fileId: z.uuid() }), z.object({ folderId: z.uuid() })]);
+
+/**
+ * Stars or unstars a file or folder for the current user. Starring needs read
+ * access; unstarring never does (it only removes the user's own row).
+ */
+export async function setFavorite(target: z.input<typeof favoriteTargetSchema>, favorite: boolean) {
+  const session = await requireSession();
+  return run(
+    async () => {
+      const t = favoriteTargetSchema.parse(target);
+      const userId = session.user.id;
+      if (!favorite) {
+        const match = "fileId" in t ? eq(favorites.fileId, t.fileId) : eq(favorites.folderId, t.folderId);
+        await db.delete(favorites).where(and(eq(favorites.userId, userId), match));
+        return;
+      }
+      if ("fileId" in t) await requireFileRole(t.fileId, "viewer");
+      else await requireFolderRole(session, t.folderId, "viewer");
+      await db.insert(favorites).values({ userId, ...t }).onConflictDoNothing();
+    },
+    // The star flips on the client right away; nothing else on the page changes.
+    { refresh: false },
+  );
+}
+
+export async function getShareLinkFiles(linkId: string) {
+  const session = await requireSession();
+  return listShareLinkFiles(session, linkId);
 }
 
 // ---------------------------------------------------------------------------
@@ -278,19 +522,26 @@ export async function deleteShareLink(linkId: string) {
 async function requireFileRole(fileId: string, min: "viewer" | "editor") {
   const session = await requireSession();
   const [file] = await db
-    .select({ id: files.id, folderId: files.folderId })
+    .select({ id: files.id, name: files.name, folderId: files.folderId })
     .from(files)
     .where(and(eq(files.id, fileId), isNull(files.deletedAt)));
   if (!file) throw new NotFoundError("File không tồn tại");
-  await requireFolderRole(session, file.folderId, min);
-  return file;
+  const { folder } = await requireFolderRole(session, file.folderId, min);
+  return { session, file, folder };
 }
 
 export async function renameFile(fileId: string, rawName: string) {
   return run(async () => {
     const name = nameSchema.parse(rawName);
-    await requireFileRole(fileId, "editor");
-    await db.update(files).set({ name }).where(eq(files.id, fileId));
+    const { session, file, folder } = await requireFileRole(fileId, "editor");
+    if (name === file.name) return;
+    await db.batch([
+      db.update(files).set({ name }).where(eq(files.id, fileId)),
+      logActivity(session, "file.rename", {
+        folder,
+        meta: { from: file.name, to: name, folderName: folder.name },
+      }),
+    ]);
   });
 }
 
@@ -341,14 +592,166 @@ export async function attachThumbnail(fileId: string) {
   });
 }
 
-export async function trashFile(fileId: string) {
+const fileIdsSchema = z
+  .array(z.uuid())
+  .min(1)
+  .max(500)
+  .transform((ids) => [...new Set(ids)]);
+
+/** Trashes live files, possibly from several folders: editor on each one. */
+export async function trashFiles(fileIds: string[]) {
+  const session = await requireSession();
   return run(async () => {
-    const session = await requireSession();
-    await requireFileRole(fileId, "editor");
-    await db
-      .update(files)
-      .set({ deletedAt: new Date(), deletedBy: session.user.id })
-      .where(eq(files.id, fileId));
+    const ids = fileIdsSchema.parse(fileIds);
+    const rows = await db
+      .select({ name: files.name, folder: { id: folders.id, path: folders.path, name: folders.name } })
+      .from(files)
+      .innerJoin(folders, eq(folders.id, files.folderId))
+      .where(and(inArray(files.id, ids), isNull(files.deletedAt)));
+    if (rows.length !== ids.length) throw new NotFoundError("File không tồn tại");
+    for (const folderId of new Set(rows.map((r) => r.folder.id))) {
+      await requireFolderRole(session, folderId, "editor");
+    }
+    await db.batch([
+      db
+        .update(files)
+        .set({ deletedAt: new Date(), deletedBy: session.user.id })
+        .where(and(inArray(files.id, ids), isNull(files.deletedAt))),
+      ...logPerFolder(session, "file.trash", rows),
+    ]);
+  });
+}
+
+export async function trashFile(fileId: string) {
+  return trashFiles([fileId]);
+}
+
+// ---------------------------------------------------------------------------
+// Moving files and folders
+// ---------------------------------------------------------------------------
+
+const MOVE_TARGET_LIMIT = 2000;
+
+/**
+ * Folders the user may move things into (editor and up), for the move dialog,
+ * plus how many of `fileIds` sit in a share link of their current folder and
+ * would be dropped from it by a move.
+ */
+export async function getMoveTargets(fileIds: string[] = []) {
+  const session = await requireSession();
+  return run(
+    async () => {
+      const ids = z.array(z.uuid()).max(500).parse(fileIds);
+      const [rows, [linked]] = await Promise.all([
+        db
+          .select({ id: folders.id, name: folders.name, parentId: folders.parentId, path: folders.path })
+          .from(folders)
+          .where(and(isNull(folders.deletedAt), grantedOn(session, folders.path, "editor")))
+          .orderBy(asc(folders.name))
+          .limit(MOVE_TARGET_LIMIT + 1),
+        ids.length
+          ? db
+              .select({ count: sql<number>`count(distinct ${shareLinkFiles.fileId})::int` })
+              .from(shareLinkFiles)
+              .innerJoin(files, eq(files.id, shareLinkFiles.fileId))
+              .innerJoin(shareLinks, eq(shareLinks.id, shareLinkFiles.linkId))
+              .where(and(inArray(shareLinkFiles.fileId, ids), eq(shareLinks.folderId, files.folderId)))
+          : Promise.resolve([{ count: 0 }]),
+      ]);
+      return {
+        folders: rows.slice(0, MOVE_TARGET_LIMIT),
+        truncated: rows.length > MOVE_TARGET_LIMIT,
+        linkedFiles: linked?.count ?? 0,
+      };
+    },
+    { refresh: false },
+  );
+}
+
+/**
+ * Moves files of one folder into another. Needs editor on both. A "files"
+ * link may only expose files of its own folder, so the moved files leave the
+ * links of the folder they came from.
+ */
+export async function moveFiles(fileIds: string[], destFolderId: string) {
+  const session = await requireSession();
+  return run(async () => {
+    const ids = z.array(z.uuid()).min(1).max(500).parse(fileIds);
+    z.uuid().parse(destFolderId);
+    const rows = await db
+      .select({ name: files.name, folderId: files.folderId })
+      .from(files)
+      .where(and(inArray(files.id, ids), isNull(files.deletedAt)));
+    if (rows.length !== new Set(ids).size) throw new NotFoundError("File không tồn tại");
+    const sourceId = rows[0].folderId;
+    if (rows.some((r) => r.folderId !== sourceId)) {
+      throw new ForbiddenError("Chỉ di chuyển được các file trong cùng một folder");
+    }
+    const { folder: source } = await requireFolderRole(session, sourceId, "editor");
+    const { folder: dest } = await requireFolderRole(session, destFolderId, "editor");
+    if (sourceId === destFolderId) return;
+    const names = rows.map((r) => r.name);
+    await db.batch([
+      // Logged where the files were: the people watching that folder see them leave.
+      logActivity(session, "file.move", {
+        folder: source,
+        meta: { names: someNames(names), count: names.length, from: source.name, to: dest.name },
+      }),
+      db
+        .update(files)
+        .set({ folderId: destFolderId })
+        .where(and(inArray(files.id, ids), eq(files.folderId, sourceId), isNull(files.deletedAt))),
+      db
+        .delete(shareLinkFiles)
+        .where(
+          and(
+            inArray(shareLinkFiles.fileId, ids),
+            inArray(
+              shareLinkFiles.linkId,
+              db.select({ id: shareLinks.id }).from(shareLinks).where(eq(shareLinks.folderId, sourceId)),
+            ),
+          ),
+        ),
+    ]);
+  });
+}
+
+/**
+ * Moves a subfolder under another folder, rewriting the `path` of its whole
+ * subtree (trashed folders included, so paths stay consistent). Top-level
+ * folders stay where they are: their own grants make up a shared space.
+ */
+export async function moveFolder(folderId: string, destParentId: string) {
+  const session = await requireSession();
+  return run(async () => {
+    z.uuid().parse(folderId);
+    z.uuid().parse(destParentId);
+    const { folder } = await requireFolderRole(session, folderId, "editor");
+    if (folder.parentId === null) throw new ForbiddenError("Không di chuyển được folder gốc");
+    const { folder: dest } = await requireFolderRole(session, destParentId, "editor");
+    if (dest.path === folder.path || dest.path.startsWith(`${folder.path}/`)) {
+      throw new ForbiddenError("Không thể chuyển folder vào chính nó hoặc folder con của nó");
+    }
+    if (folder.parentId === dest.id) return;
+    const newPath = `${dest.path}/${folder.id}`;
+    const [oldParent] = await db
+      .select({ name: folders.name })
+      .from(folders)
+      .where(eq(folders.id, folder.parentId));
+    await db.batch([
+      // Logged at the old path, like file moves.
+      logActivity(session, "folder.move", {
+        folder,
+        meta: { name: folder.name, from: oldParent?.name ?? null, to: dest.name },
+      }),
+      db
+        .update(folders)
+        .set({
+          path: sql`${newPath} || substr(${folders.path}, ${folder.path.length + 1})`,
+          parentId: sql`case when ${folders.id} = ${folder.id} then ${dest.id}::uuid else ${folders.parentId} end`,
+        })
+        .where(or(eq(folders.path, folder.path), like(folders.path, `${folder.path}/%`))),
+    ]);
   });
 }
 
@@ -371,7 +774,7 @@ async function requireTrashedFolder(folderId: string) {
   if (!roleAtLeast(role, folder.parentId === null ? "owner" : "editor")) {
     throw new ForbiddenError();
   }
-  return folder;
+  return { session, folder };
 }
 
 async function requireTrashedFile(fileId: string) {
@@ -385,13 +788,13 @@ async function requireTrashedFile(fileId: string) {
   if (!roleAtLeast(await getEffectiveRole(session, row.folder), "editor")) {
     throw new ForbiddenError();
   }
-  return row;
+  return { session, ...row };
 }
 
 /** Restores the folder and whatever was trashed together with it. */
 export async function restoreFolder(folderId: string) {
   return run(async () => {
-    const folder = await requireTrashedFolder(folderId);
+    const { session, folder } = await requireTrashedFolder(folderId);
     if (folder.parentId) {
       const [parent] = await db
         .select({ deletedAt: folders.deletedAt })
@@ -418,31 +821,60 @@ export async function restoreFolder(folderId: string) {
             inArray(files.folderId, db.select({ id: folders.id }).from(folders).where(inSubtree)),
           ),
         ),
+      logActivity(session, "folder.restore", { folder, meta: { name: folder.name } }),
+    ]);
+  });
+}
+
+/** Restores trashed files (the "undo" of `trashFiles`): editor on each folder. */
+export async function restoreFiles(fileIds: string[]) {
+  const session = await requireSession();
+  return run(async () => {
+    const ids = fileIdsSchema.parse(fileIds);
+    const rows = await db
+      .select({ name: files.name, folder: folders })
+      .from(files)
+      .innerJoin(folders, eq(folders.id, files.folderId))
+      .where(and(inArray(files.id, ids), isNotNull(files.deletedAt)));
+    if (rows.length !== ids.length) throw new NotFoundError("Không còn trong thùng rác");
+    const byId = new Map(rows.map((r) => [r.folder.id, r.folder]));
+    for (const folder of byId.values()) {
+      if (!roleAtLeast(await getEffectiveRole(session, folder), "editor")) throw new ForbiddenError();
+      if (folder.deletedAt) {
+        throw new ForbiddenError(`Folder “${folder.name}” đang trong thùng rác. Khôi phục folder trước.`);
+      }
+    }
+    await db.batch([
+      db
+        .update(files)
+        .set({ deletedAt: null, deletedBy: null })
+        .where(and(inArray(files.id, ids), isNotNull(files.deletedAt))),
+      ...logPerFolder(session, "file.restore", rows),
     ]);
   });
 }
 
 export async function restoreFile(fileId: string) {
-  return run(async () => {
-    const { folder } = await requireTrashedFile(fileId);
-    if (folder.deletedAt) {
-      throw new ForbiddenError(`Folder “${folder.name}” đang trong thùng rác. Khôi phục folder trước.`);
-    }
-    await db.update(files).set({ deletedAt: null, deletedBy: null }).where(eq(files.id, fileId));
-  });
+  return restoreFiles([fileId]);
 }
 
 export async function purgeFolder(folderId: string) {
   return run(async () => {
-    const folder = await requireTrashedFolder(folderId);
+    const { session, folder } = await requireTrashedFolder(folderId);
     await purgeFolderTree(folder.path);
+    // Not batched: the purge runs its own batch, then deletes from R2.
+    await logActivity(session, "folder.purge", { folder, meta: { name: folder.name } });
   });
 }
 
 export async function purgeFile(fileId: string) {
   return run(async () => {
-    await requireTrashedFile(fileId);
+    const { session, file, folder } = await requireTrashedFile(fileId);
     await purgeFiles([fileId]);
+    await logActivity(session, "file.purge", {
+      folder,
+      meta: { names: [file.name], count: 1, folderName: folder.name },
+    });
   });
 }
 
@@ -475,10 +907,13 @@ export async function inviteUser(input: z.input<typeof inviteSchema>) {
       expiresAt: new Date(Date.now() + INVITE_TTL_DAYS * 86_400_000),
       createdAt: new Date(),
     };
-    await db
-      .insert(invitations)
-      .values({ email, ...fields })
-      .onConflictDoUpdate({ target: invitations.email, set: fields });
+    await db.batch([
+      db
+        .insert(invitations)
+        .values({ email, ...fields })
+        .onConflictDoUpdate({ target: invitations.email, set: fields }),
+      logActivity(session, "user.invite", { meta: { email, role } }),
+    ]);
     const emailed = await sendInviteEmail(email, token, session.user.name);
     return { token, emailed };
   });
@@ -550,7 +985,7 @@ async function requireManagedUser(userId: string) {
   const session = await requireSession();
   if (!isAdmin(session)) throw new ForbiddenError();
   const [target] = await db
-    .select({ id: user.id, email: user.email, role: user.role, banned: user.banned })
+    .select({ id: user.id, name: user.name, email: user.email, role: user.role, banned: user.banned })
     .from(user)
     .where(eq(user.id, userIdSchema.parse(userId)));
   if (!target) throw new NotFoundError("User không tồn tại");
@@ -586,12 +1021,18 @@ export async function updateUserProfile(userId: string, input: z.input<typeof pr
 
 export async function setUserRole(userId: string, rawRole: "user" | "admin") {
   return run(async () => {
-    const { target, self } = await requireManagedUser(userId);
+    const { session, target, self } = await requireManagedUser(userId);
     const role = z.enum(["user", "admin"]).parse(rawRole);
     if (role === target.role) return;
     if (self) throw new ForbiddenError("Không thể tự đổi vai trò của chính mình");
     if (role === "user") await assertNotLastAdmin(target);
-    await db.update(user).set({ role }).where(eq(user.id, target.id));
+    await db.batch([
+      db.update(user).set({ role }).where(eq(user.id, target.id)),
+      logActivity(session, "user.role", {
+        targetUserId: target.id,
+        meta: { name: target.name, from: target.role, to: role },
+      }),
+    ]);
   });
 }
 
@@ -602,7 +1043,7 @@ export async function setUserRole(userId: string, rawRole: "user" | "admin") {
  */
 export async function lockUser(userId: string, rawReason?: string) {
   return run(async () => {
-    const { target, self } = await requireManagedUser(userId);
+    const { session, target, self } = await requireManagedUser(userId);
     if (self) throw new ForbiddenError("Không thể tự khoá tài khoản của chính mình");
     await assertNotLastAdmin(target);
     const reason = z.string().trim().max(200, "Lý do quá dài").optional().parse(rawReason);
@@ -612,17 +1053,24 @@ export async function lockUser(userId: string, rawReason?: string) {
         .set({ banned: true, banReason: reason || null, banExpires: null })
         .where(eq(user.id, target.id)),
       db.delete(sessions).where(eq(sessions.userId, target.id)),
+      logActivity(session, "user.lock", {
+        targetUserId: target.id,
+        meta: { name: target.name, reason: reason || null },
+      }),
     ]);
   });
 }
 
 export async function unlockUser(userId: string) {
   return run(async () => {
-    const { target } = await requireManagedUser(userId);
-    await db
-      .update(user)
-      .set({ banned: false, banReason: null, banExpires: null })
-      .where(eq(user.id, target.id));
+    const { session, target } = await requireManagedUser(userId);
+    await db.batch([
+      db
+        .update(user)
+        .set({ banned: false, banReason: null, banExpires: null })
+        .where(eq(user.id, target.id)),
+      logActivity(session, "user.unlock", { targetUserId: target.id, meta: { name: target.name } }),
+    ]);
   });
 }
 
@@ -633,12 +1081,16 @@ export async function unlockUser(userId: string) {
 export async function sendPasswordReset(userId: string) {
   return run(
     async () => {
-      const { target } = await requireManagedUser(userId);
+      const { session, target } = await requireManagedUser(userId);
       await auth.api.requestPasswordReset({
         body: {
           email: target.email,
           redirectTo: `${process.env.BETTER_AUTH_URL}/reset-password`,
         },
+      });
+      await logActivity(session, "user.password", {
+        targetUserId: target.id,
+        meta: { name: target.name, via: "email" },
       });
     },
     { refresh: false },
@@ -648,14 +1100,20 @@ export async function sendPasswordReset(userId: string) {
 /** For when mail isn't set up: the admin picks a password and passes it on. */
 export async function setUserPassword(userId: string, rawPassword: string) {
   return run(async () => {
-    const { target, self } = await requireManagedUser(userId);
+    const { session, target, self } = await requireManagedUser(userId);
     if (self) throw new ForbiddenError("Đổi mật khẩu của chính mình bằng link đặt lại mật khẩu");
     const newPassword = passwordSchema.parse(rawPassword);
     await auth.api.setUserPassword({
       body: { userId: target.id, newPassword },
       headers: await headers(),
     });
-    await db.delete(sessions).where(eq(sessions.userId, target.id));
+    await db.batch([
+      db.delete(sessions).where(eq(sessions.userId, target.id)),
+      logActivity(session, "user.password", {
+        targetUserId: target.id,
+        meta: { name: target.name, via: "set" },
+      }),
+    ]);
   });
 }
 
@@ -666,6 +1124,16 @@ export async function revokeUserSessions(userId: string) {
     if (self) throw new ForbiddenError("Không thể tự đăng xuất mọi phiên của chính mình ở đây");
     await db.delete(sessions).where(eq(sessions.userId, target.id));
   });
+}
+
+// ---------------------------------------------------------------------------
+// Activity log
+// ---------------------------------------------------------------------------
+
+/** A page of the log: a folder's for its owners, everything for admins. */
+export async function loadActivity(filter: ActivityFilter) {
+  const session = await requireSession();
+  return run(() => listActivity(session, filter), { refresh: false });
 }
 
 // ---------------------------------------------------------------------------

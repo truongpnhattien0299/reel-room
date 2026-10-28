@@ -4,6 +4,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql, type AnyCo
 import { db } from "@/db";
 import { account, files, folderPermissions, folders, session, user, type FolderRole } from "@/db/schema";
 import { isAdmin, type Session } from "@/lib/auth";
+import { TRASH_RETENTION_DAYS } from "@/lib/trash";
 import { ancestorIds, requireFolderRole } from "@/server/permissions";
 
 export type FolderSummary = { id: string; name: string };
@@ -105,7 +106,7 @@ export const fileColumns = {
   height: files.height,
   durationMs: files.durationMs,
   createdAt: files.createdAt,
-  uploaderName: user.name,
+  uploader: { id: user.id, name: user.name, image: user.image },
 };
 
 export function toFileItem({ thumbKey, ...f }: { thumbKey: string | null } & Omit<FileItem, "hasThumb">) {
@@ -122,7 +123,8 @@ export type FileItem = {
   height: number | null;
   durationMs: number | null;
   createdAt: Date;
-  uploaderName: string;
+  /** Null on public share links. */
+  uploader: { id: string; name: string; image: string | null } | null;
 };
 
 export type FolderStats = {
@@ -179,20 +181,33 @@ export async function listRootFoldersWithStats(session: Session) {
 
 export type LibraryFolder = Awaited<ReturnType<typeof listRootFoldersWithStats>>[number];
 
+const ROLES_AT_LEAST: Record<FolderRole, SQL> = {
+  viewer: sql`('viewer','editor','owner')`,
+  editor: sql`('editor','owner')`,
+  owner: sql`('owner')`,
+};
+
+/**
+ * SQL condition: `userId` holds a grant (of at least `min`) on the folder at
+ * `path` or one of its ancestors. Ignores the admin role.
+ */
+export function hasGrant(userId: SQL | AnyColumn | string, path: SQL | AnyColumn, min: FolderRole) {
+  return sql`exists (
+    select 1 from folder_permissions p
+    join folders g on g.id = p.folder_id
+    where p.user_id = ${userId}
+      and p.role in ${ROLES_AT_LEAST[min]}
+      and (${path} = g.path or ${path} like g.path || '/%')
+  )`;
+}
+
 /**
  * SQL condition: the user holds a grant (of at least `min`) on the folder at
  * `path` or one of its ancestors. Undefined for admins, who see everything.
  */
-function grantedOn(session: Session, path: SQL | AnyColumn, min: "viewer" | "editor" = "viewer") {
+export function grantedOn(session: Session, path: SQL | AnyColumn, min: "viewer" | "editor" = "viewer") {
   if (isAdmin(session)) return undefined;
-  const roles = min === "viewer" ? sql`('viewer','editor','owner')` : sql`('editor','owner')`;
-  return sql`exists (
-    select 1 from folder_permissions p
-    join folders g on g.id = p.folder_id
-    where p.user_id = ${session.user.id}
-      and p.role in ${roles}
-      and (${path} = g.path or ${path} like g.path || '/%')
-  )`;
+  return hasGrant(session.user.id, path, min);
 }
 
 /** Newest files across every folder the user can see. */
@@ -244,6 +259,7 @@ export async function listUsers() {
       id: user.id,
       name: user.name,
       email: user.email,
+      image: user.image,
       role: user.role,
       banned: sql<boolean>`coalesce(${user.banned}, false)`,
       createdAt: user.createdAt,
@@ -262,6 +278,7 @@ export async function getUserDetail(id: string) {
       id: user.id,
       name: user.name,
       email: user.email,
+      image: user.image,
       role: user.role,
       banned: sql<boolean>`coalesce(${user.banned}, false)`,
       banReason: user.banReason,
@@ -375,9 +392,6 @@ export async function searchLibrary(session: Session, rawTerm: string) {
 // ---------------------------------------------------------------------------
 // Trash
 // ---------------------------------------------------------------------------
-
-/** Trashed items stay this long before the daily cron purges them. */
-export const TRASH_RETENTION_DAYS = 30;
 
 const deleter = alias(user, "deleter");
 

@@ -6,6 +6,7 @@ import { InvitationList } from "@/components/admin/invitation-list";
 import { InviteUserButton } from "@/components/admin/invite-user-button";
 import { UserStatus } from "@/components/admin/user-status";
 import { PageHeader, PageShell } from "@/components/page-header";
+import { UserAvatar } from "@/components/user-avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -53,15 +54,20 @@ export default async function UsersPage() {
                 // The name link stretches over the whole row.
                 <TableRow key={u.id} className="relative">
                   <TableCell className="font-medium">
-                    <Link
-                      href={`/admin/users/${u.id}`}
-                      className="outline-none after:absolute after:inset-0 after:rounded-[inherit] focus-visible:after:ring-2 focus-visible:after:ring-ring focus-visible:after:ring-inset"
-                    >
-                      {u.name}
-                    </Link>
-                    {u.id === session.user.id && (
-                      <span className="ml-2 text-xs font-normal text-muted-foreground">(Bạn)</span>
-                    )}
+                    <span className="flex items-center gap-3">
+                      <UserAvatar user={u} />
+                      <span>
+                        <Link
+                          href={`/admin/users/${u.id}`}
+                          className="outline-none after:absolute after:inset-0 after:rounded-[inherit] focus-visible:after:ring-2 focus-visible:after:ring-ring focus-visible:after:ring-inset"
+                        >
+                          {u.name}
+                        </Link>
+                        {u.id === session.user.id && (
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">(Bạn)</span>
+                        )}
+                      </span>
+                    </span>
                   </TableCell>
                   <TableCell>{u.email}</TableCell>
                   <TableCell>

@@ -1,7 +1,9 @@
 "use client";
 
-import { PencilIcon, Trash2Icon, UsersIcon } from "lucide-react";
+import { DownloadIcon, FolderInputIcon, PencilIcon, StarIcon, Trash2Icon, UsersIcon } from "lucide-react";
 import Link from "next/link";
+import { FavoriteButton, favoriteLabel, StarMark } from "@/components/favorites/favorite-button";
+import { useFavorites } from "@/components/favorites/favorites-provider";
 import { formatRelative } from "@/lib/format";
 import type { FolderStats } from "@/server/queries";
 import { ItemWithMenu, type MenuAction } from "./item-menu";
@@ -9,16 +11,29 @@ import { MediaThumb, ToneTile } from "./media-thumb";
 
 export type FolderCardActions = {
   onRename?: () => void;
+  onMove?: () => void;
   onShare?: () => void;
+  onDownload?: () => void;
   onDelete?: () => void;
 };
 
 type CardFolder = { id: string; name: string } & FolderStats;
 
-function menuActions({ onRename, onShare, onDelete }: FolderCardActions): MenuAction[] {
+/** The card's menu, with "star" first when the user has favorites. */
+function useMenuActions(
+  folderId: string,
+  { onRename, onMove, onShare, onDownload, onDelete }: FolderCardActions,
+): MenuAction[] {
+  const favorites = useFavorites();
   const actions: MenuAction[] = [];
+  if (favorites) {
+    const on = favorites.isFavorite("folder", folderId);
+    actions.push({ label: favoriteLabel(on), icon: StarIcon, onClick: () => favorites.toggle("folder", folderId) });
+  }
   if (onRename) actions.push({ label: "Đổi tên", icon: PencilIcon, onClick: onRename });
+  if (onMove) actions.push({ label: "Di chuyển", icon: FolderInputIcon, onClick: onMove });
   if (onShare) actions.push({ label: "Chia sẻ", icon: UsersIcon, onClick: onShare });
+  if (onDownload) actions.push({ label: "Tải về (.zip)", icon: DownloadIcon, onClick: onDownload });
   if (onDelete) {
     actions.push({ label: "Xoá", icon: Trash2Icon, onClick: onDelete, destructive: true });
   }
@@ -34,7 +49,7 @@ function folderMeta(f: FolderStats) {
 export function FolderCard({ folder, ...actions }: { folder: CardFolder } & FolderCardActions) {
   const [a, b, c] = folder.previewIds;
   return (
-    <ItemWithMenu actions={menuActions(actions)} className="group/item relative">
+    <ItemWithMenu actions={useMenuActions(folder.id, actions)} className="group/item relative">
       <Link
         href={`/f/${folder.id}`}
         className="flex flex-col gap-3.5 rounded-[18px] bg-card p-2.5 pb-4 ring-1 ring-border transition-[transform,box-shadow] duration-200 outline-none hover:-translate-y-0.5 hover:ring-[#3a3f4a] focus-visible:ring-2 focus-visible:ring-ring"
@@ -57,6 +72,7 @@ export function FolderCard({ folder, ...actions }: { folder: CardFolder } & Fold
           <span className="font-mono text-xs text-muted-foreground">{folderMeta(folder)}</span>
         </div>
       </Link>
+      <FavoriteButton kind="folder" id={folder.id} className="absolute top-4.5 left-4.5" />
     </ItemWithMenu>
   );
 }
@@ -68,9 +84,10 @@ export function SubfolderCard({
   ...actions
 }: { folder: CardFolder; href?: string } & FolderCardActions) {
   const cover = folder.previewIds[0];
+  const starred = useFavorites()?.isFavorite("folder", folder.id) ?? false;
   return (
     <ItemWithMenu
-      actions={menuActions(actions)}
+      actions={useMenuActions(folder.id, actions)}
       className="group/item relative"
       menuClassName="top-1/2 right-2.5 -translate-y-1/2"
     >
@@ -82,8 +99,16 @@ export function SubfolderCard({
           {cover ? <MediaThumb id={cover} hasThumb /> : <ToneTile seed={folder.id} />}
         </span>
         <span className="flex min-w-0 flex-1 flex-col leading-snug">
-          <span className="truncate font-semibold" title={folder.name}>
-            {folder.name}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate font-semibold" title={folder.name}>
+              {folder.name}
+            </span>
+            {starred && (
+              <>
+                <StarMark on className="size-3.5 shrink-0" />
+                <span className="sr-only">(yêu thích)</span>
+              </>
+            )}
           </span>
           <span className="font-mono text-xs text-muted-foreground">
             {folder.itemCount === 0 ? "Trống" : `${folder.itemCount} mục`}

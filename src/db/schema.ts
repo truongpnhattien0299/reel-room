@@ -2,7 +2,10 @@ import { relations, sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
   index,
+  integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -151,6 +154,11 @@ export const files = pgTable(
     width: bigint("width", { mode: "number" }),
     height: bigint("height", { mode: "number" }),
     durationMs: bigint("duration_ms", { mode: "number" }),
+    /**
+     * Hex SHA-256 computed by the uploader's browser. A hint for duplicate
+     * detection only: the server never reads the bytes to check it.
+     */
+    sha256: text("sha256"),
     status: fileStatus("status").notNull().default("uploading"),
     uploadedBy: text("uploaded_by")
       .notNull()
@@ -167,6 +175,8 @@ export const files = pgTable(
     index("files_folder_idx").on(t.folderId),
     index("files_deleted_idx").on(t.deletedAt),
     index("files_status_created_idx").on(t.status, t.createdAt),
+    index("files_size_idx").on(t.size),
+    index("files_sha256_idx").on(t.sha256),
   ],
 );
 
@@ -219,6 +229,15 @@ export const shareLinks = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
+    /** `salt:hash` (scrypt, base64); null: no password. */
+    passwordHash: text("password_hash"),
+    allowDownload: boolean("allow_download").notNull().default(true),
+    viewCount: integer("view_count").notNull().default(0),
+    downloadCount: integer("download_count").notNull().default(0),
+    lastViewedAt: timestamp("last_viewed_at"),
+    /** Wrong passwords in a row; `lockedUntil` is set when it reaches the limit. */
+    failedAttempts: integer("failed_attempts").notNull().default(0),
+    lockedUntil: timestamp("locked_until"),
   },
   (t) => [
     index("share_links_folder_idx").on(t.folderId),
@@ -260,6 +279,82 @@ export const invitations = pgTable(
   (t) => [index("invitations_expires_idx").on(t.expiresAt)],
 );
 
+export const activityAction = pgEnum("activity_action", [
+  "file.upload",
+  "file.rename",
+  "file.move",
+  "file.trash",
+  "file.restore",
+  "file.purge",
+  "folder.create",
+  "folder.rename",
+  "folder.move",
+  "folder.trash",
+  "folder.restore",
+  "folder.purge",
+  // Folder members.
+  "share.grant",
+  "share.revoke",
+  // Public links.
+  "link.create",
+  "link.update",
+  "link.revoke",
+  "user.invite",
+  "user.role",
+  "user.lock",
+  "user.unlock",
+  "user.password",
+]);
+
+/**
+ * Append-only log of who did what. No foreign keys to folders or files: rows
+ * must outlive a permanent delete, so they copy what they need to read on
+ * their own (folder path, names) at the time of the event.
+ */
+export const activity = pgTable(
+  "activity",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Null: the system (the daily cleanup). */
+    actorId: text("actor_id").references(() => user.id, { onDelete: "set null" }),
+    action: activityAction("action").notNull(),
+    /** The folder the event happened in, and its path then (for subtree filters). */
+    folderId: uuid("folder_id"),
+    folderPath: text("folder_path"),
+    targetUserId: text("target_user_id"),
+    /** Names, counts, old/new values: whatever the row needs to read on its own. */
+    meta: jsonb("meta").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("activity_created_idx").on(t.createdAt),
+    index("activity_folder_path_idx").on(t.folderPath.op("text_pattern_ops")),
+    index("activity_actor_idx").on(t.actorId),
+  ],
+);
+
+/**
+ * Each user's own starred files and folders; nobody else sees them. A row
+ * points at exactly one of the two. Rows survive losing access: the
+ * favorites list hides what the user can no longer open.
+ */
+export const favorites = pgTable(
+  "favorites",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    fileId: uuid("file_id").references(() => files.id, { onDelete: "cascade" }),
+    folderId: uuid("folder_id").references(() => folders.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("favorites_file_uq").on(t.userId, t.fileId).where(sql`${t.fileId} is not null`),
+    uniqueIndex("favorites_folder_uq").on(t.userId, t.folderId).where(sql`${t.folderId} is not null`),
+    check("favorites_one_target", sql`(${t.fileId} is null) <> (${t.folderId} is null)`),
+  ],
+);
+
 export const foldersRelations = relations(folders, ({ many }) => ({
   files: many(files),
   permissions: many(folderPermissions),
@@ -285,3 +380,5 @@ export type FileRow = typeof files.$inferSelect;
 export type FolderRole = (typeof folderRole.enumValues)[number];
 export type ShareLink = typeof shareLinks.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
+export type ActivityAction = (typeof activityAction.enumValues)[number];
+export type ActivityRow = typeof activity.$inferSelect;

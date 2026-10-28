@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache, Fragment } from "react";
+import { FolderActivityButton } from "@/components/activity/folder-activity-button";
+import { DownloadFolderButton } from "@/components/folders/download-folder-button";
 import { FileGrid } from "@/components/folders/file-grid";
 import { FolderGrid } from "@/components/folders/folder-grid";
 import { NewFolderButton } from "@/components/folders/new-folder-button";
@@ -94,6 +96,8 @@ export default async function FolderPage(props: PageProps<"/f/[folderId]">) {
               {canEdit && (
                 <ShareButton folder={view.folder} role={view.role} currentUserId={session.user.id} />
               )}
+              {!isEmpty && <DownloadFolderButton folder={view.folder} />}
+              {view.role === "owner" && <FolderActivityButton folder={view.folder} />}
               {canEdit && <NewFolderButton parentId={view.folder.id} />}
               {canEdit && <UploadButton folderId={view.folder.id} />}
             </>
@@ -101,10 +105,11 @@ export default async function FolderPage(props: PageProps<"/f/[folderId]">) {
         />
 
         {view.subfolders.length > 0 && (
-          <section aria-label="Folder con">
+          <section aria-label="Folder con" className="flex flex-col gap-3">
             <FolderGrid
               folders={view.subfolders.map((f) => ({ ...f, role: view.role }))}
               isRoot={false}
+              parentId={view.folder.id}
               currentUserId={session.user.id}
             />
           </section>
@@ -115,7 +120,7 @@ export default async function FolderPage(props: PageProps<"/f/[folderId]">) {
             <FileGrid
               files={view.files}
               canEdit={canEdit}
-              shareFolderId={canEdit ? view.folder.id : undefined}
+              folderId={view.folder.id}
               folderName={view.folder.name}
               initialFileId={typeof file === "string" ? file : undefined}
             />

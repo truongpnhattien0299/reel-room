@@ -4,6 +4,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   DownloadIcon,
+  FolderInputIcon,
   InfoIcon,
   MoreHorizontalIcon,
   PencilIcon,
@@ -11,6 +12,8 @@ import {
   XIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { FavoriteButton } from "@/components/favorites/favorite-button";
+import { useFavorites } from "@/components/favorites/favorites-provider";
 import { MediaThumb } from "@/components/folders/media-thumb";
 import { useMediaUrls } from "@/components/folders/media-urls";
 import { Button } from "@/components/ui/button";
@@ -26,7 +29,7 @@ import { mediaKind } from "@/lib/media";
 import { cn } from "@/lib/utils";
 import type { FileItem } from "@/server/queries";
 import { AudioPlayer } from "./audio-player";
-import { useViewerHotkeys } from "./hotkeys";
+import { ignoreHotkey, useViewerHotkeys, useWindowKeydown } from "./hotkeys";
 import { ImageViewer } from "./image-viewer";
 import { InfoPanel } from "./info-panel";
 import { VideoPlayer } from "./video-player";
@@ -38,6 +41,7 @@ export function MediaViewer({
   index,
   onIndexChange,
   onRename,
+  onMove,
   onDelete,
 }: {
   files: FileItem[];
@@ -45,6 +49,7 @@ export function MediaViewer({
   index: number | null;
   onIndexChange: (index: number | null) => void;
   onRename?: (file: FileItem) => void;
+  onMove?: (file: FileItem) => void;
   onDelete?: (file: FileItem) => void;
 }) {
   const file = index === null ? null : files[index];
@@ -55,8 +60,17 @@ export function MediaViewer({
   const stripRef = useRef<HTMLElement>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const urls = useMediaUrls();
+  const downloadUrl = file && urls.download ? urls.download(file.id) : null;
 
   useViewerHotkeys({ enabled: file !== null, arrowsNavigate: kind === "image", onPrev: prev, onNext: next });
+
+  // S stars the file (F is taken by the players' fullscreen).
+  const favorites = useFavorites();
+  useWindowKeydown(file !== null && favorites !== null, (e) => {
+    if (e.key.toLowerCase() !== "s" || e.shiftKey || ignoreHotkey(e) || !file || !favorites) return;
+    e.preventDefault();
+    favorites.toggle("file", file.id);
+  });
 
   // Keep the current frame of the filmstrip in view.
   useEffect(() => {
@@ -110,17 +124,20 @@ export function MediaViewer({
                 >
                   <InfoIcon />
                 </Button>
-                <Button
-                  size="xl"
-                  nativeButton={false}
-                  render={<a href={urls.download(file.id)} />}
-                  aria-label="Tải về"
-                  className="max-sm:w-11 max-sm:px-0!"
-                >
-                  <DownloadIcon data-icon="inline-start" />
-                  <span className="max-sm:hidden">Tải về</span>
-                </Button>
-                {(onRename || onDelete) && (
+                <FavoriteButton kind="file" id={file.id} variant="toolbar" />
+                {downloadUrl && (
+                  <Button
+                    size="xl"
+                    nativeButton={false}
+                    render={<a href={downloadUrl} />}
+                    aria-label="Tải về"
+                    className="max-sm:w-11 max-sm:px-0!"
+                  >
+                    <DownloadIcon data-icon="inline-start" />
+                    <span className="max-sm:hidden">Tải về</span>
+                  </Button>
+                )}
+                {(onRename || onMove || onDelete) && (
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       render={<Button variant="outline" size="icon-xl" aria-label="Thêm thao tác" />}
@@ -132,6 +149,12 @@ export function MediaViewer({
                         <DropdownMenuItem onClick={() => onRename(file)}>
                           <PencilIcon />
                           Đổi tên
+                        </DropdownMenuItem>
+                      )}
+                      {onMove && (
+                        <DropdownMenuItem onClick={() => onMove(file)}>
+                          <FolderInputIcon />
+                          Di chuyển
                         </DropdownMenuItem>
                       )}
                       {onDelete && (
@@ -157,7 +180,7 @@ export function MediaViewer({
                       key={file.id}
                       file={file}
                       src={urls.content(file.id)}
-                      downloadUrl={urls.download(file.id)}
+                      downloadUrl={downloadUrl}
                       onPrev={prev}
                       onNext={next}
                     />
@@ -165,14 +188,14 @@ export function MediaViewer({
                     <VideoPlayer
                       key={file.id}
                       src={urls.content(file.id)}
-                      downloadUrl={urls.download(file.id)}
+                      downloadUrl={downloadUrl}
                     />
                   ) : (
                     <AudioPlayer
                       key={file.id}
                       file={file}
                       src={urls.content(file.id)}
-                      downloadUrl={urls.download(file.id)}
+                      downloadUrl={downloadUrl}
                       folderName={folderName}
                       onEnded={playOn}
                       onPrev={prev}
