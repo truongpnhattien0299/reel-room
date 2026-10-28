@@ -53,7 +53,14 @@ export async function grant(u: Pick<User, "id">, folder: { id: string }, role: F
 export async function makeFile(
   folder: { id: string },
   uploader: Pick<User, "id">,
-  opts: { name?: string; size?: number; mimeType?: string } = {},
+  opts: {
+    name?: string;
+    size?: number;
+    mimeType?: string;
+    status?: "uploading" | "ready";
+    createdAt?: Date;
+    deletedAt?: Date;
+  } = {},
 ) {
   const id = crypto.randomUUID();
   const [row] = await db
@@ -65,8 +72,10 @@ export async function makeFile(
       mimeType: opts.mimeType ?? "image/jpeg",
       size: opts.size ?? 1000,
       r2Key: `files/${id}`,
-      status: "ready",
+      status: opts.status ?? "ready",
       uploadedBy: uploader.id,
+      createdAt: opts.createdAt,
+      deletedAt: opts.deletedAt,
     })
     .returning();
   return row;

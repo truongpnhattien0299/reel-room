@@ -44,3 +44,25 @@ Chỉ admin (giống `/admin/users`: kiểm `isAdmin` trong page, không phải 
 - `pnpm typecheck && pnpm lint && pnpm test && pnpm build`.
 - So tổng "Đang dùng" với tổng dung lượng các folder gốc trên trang thư viện → khớp.
 - Đăng nhập user thường, vào `/admin/storage` → 404. Bề rộng 375px: bảng cuộn ngang trong khung riêng, trang không tràn.
+
+## Ghi chú khi làm
+- **Nhánh tạo từ `develop`**, không phụ thuộc #19/#20.
+- **Phân nhóm:**
+  - "Đang dùng" = `ready` và chưa xoá.
+  - "Thùng rác" = có `deleted_at` (mọi status). Xoá folder đã đóng dấu `deleted_at` xuống từng file, nên không cần join `folders`.
+  - "Upload dở" = `uploading` chưa xoá. Đây là kích thước khai báo, R2 có thể chưa nhận đủ.
+- **Chi phí ước tính** tính trên toàn bộ dung lượng còn nằm trong bucket (đang dùng + thùng rác + upload dở), trừ 10 GB miễn phí. 1 GB = 1024³ byte, khớp với `formatBytes`.
+- **Biểu đồ tháng:**
+  - Chỉ tính file còn đang dùng, để cộng lại ra đúng "Đang dùng" (file đã purge thì không còn trong DB).
+  - Tháng tính theo UTC. `generate_series` điền các tháng trống.
+  - Một series nên dùng một màu (primary), không cần chú thích. Có tooltip khi hover/focus từng cột, và "Xem dạng bảng" (`<details>`) cho số liệu.
+  - Ở màn hẹp, nhãn tháng hiện xen kẽ, luôn giữ tháng mới nhất.
+- **Theo loại:** chỉ ảnh/video/audio; app chỉ cho upload ba loại này.
+- **Trang chi tiết user** đã có dòng "File đã upload: N · X" (chỉ tính file đang dùng), nên không thêm gì.
+- **Sidebar:** "Quản lý user" giờ chỉ sáng ở `/admin/users*`; thêm "Dung lượng" sáng ở `/admin/storage`.
+- **Factory `makeFile`** nhận thêm `status`, `createdAt`, `deletedAt`.
+- **Thử trên trình duyệt:**
+  - "Đang dùng" 1.4 MB / 6 file khớp tổng folder gốc "Viewer test".
+  - Tooltip cột tháng 10 đúng.
+  - Ở 375px: trang không tràn, các bảng cuộn trong khung riêng.
+  - Chặn user thường: cùng kiểm tra `isAdmin` → `notFound()` như `/admin/users`. Không đăng nhập thử bằng tài khoản thường vì chưa có sẵn tài khoản đó.
