@@ -4,6 +4,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql, type AnyCo
 import { db } from "@/db";
 import { account, files, folderPermissions, folders, session, user, type FolderRole } from "@/db/schema";
 import { isAdmin, type Session } from "@/lib/auth";
+import { TRASH_RETENTION_DAYS } from "@/lib/trash";
 import { ancestorIds, requireFolderRole } from "@/server/permissions";
 
 export type FolderSummary = { id: string; name: string };
@@ -391,9 +392,6 @@ export async function searchLibrary(session: Session, rawTerm: string) {
 // ---------------------------------------------------------------------------
 // Trash
 // ---------------------------------------------------------------------------
-
-/** Trashed items stay this long before the daily cron purges them. */
-export const TRASH_RETENTION_DAYS = 30;
 
 const deleter = alias(user, "deleter");
 

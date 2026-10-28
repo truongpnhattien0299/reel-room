@@ -117,7 +117,6 @@ export default async function FolderPage(props: PageProps<"/f/[folderId]">) {
               files={view.files}
               canEdit={canEdit}
               folderId={view.folder.id}
-              shareFolderId={canEdit ? view.folder.id : undefined}
               folderName={view.folder.name}
               initialFileId={typeof file === "string" ? file : undefined}
             />

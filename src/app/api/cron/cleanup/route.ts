@@ -3,8 +3,8 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
 import { files, folders, invitations, shareLinks } from "@/db/schema";
 import { deleteObject, thumbKey } from "@/lib/r2";
+import { TRASH_RETENTION_DAYS } from "@/lib/trash";
 import { purgeFiles, purgeFolderTree } from "@/server/purge";
-import { TRASH_RETENTION_DAYS } from "@/server/queries";
 
 const DAY = 24 * 60 * 60 * 1000;
 
