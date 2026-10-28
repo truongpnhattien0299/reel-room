@@ -6,6 +6,7 @@ import {
   LogOutIcon,
   PlusIcon,
   ShieldIcon,
+  UserRoundIcon,
   Trash2Icon,
 } from "lucide-react";
 import Link from "next/link";
@@ -14,6 +15,7 @@ import { Suspense, useState } from "react";
 import { ReelMark, Wordmark } from "@/components/brand/reel-mark";
 import { NameDialog } from "@/components/folders/name-dialog";
 import { SearchBox } from "@/components/search/search-box";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,14 +40,6 @@ import { toneFor } from "@/lib/tones";
 import { createFolder } from "@/server/actions";
 import type { FolderSummary } from "@/server/queries";
 
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(-2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
-
 const itemClass =
   "h-10 gap-3 rounded-[10px] px-3 text-[14px] text-sidebar-foreground data-active:font-medium [&_svg]:size-[18px]";
 
@@ -55,7 +49,7 @@ export function AppSidebar({
   isAdmin,
 }: {
   rootFolders: FolderSummary[];
-  user: { name: string; email: string };
+  user: { id: string; name: string; email: string; image: string | null };
   isAdmin: boolean;
 }) {
   const pathname = usePathname();
@@ -163,12 +157,7 @@ export function AppSidebar({
               />
             }
           >
-            <span
-              className="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-              style={{ background: toneFor(user.email).sky }}
-            >
-              {initials(user.name)}
-            </span>
+            <UserAvatar user={user} />
             <span className="flex min-w-0 flex-1 flex-col leading-tight">
               <span className="truncate font-medium">{user.name}</span>
               <span className="truncate text-xs text-muted-foreground">
@@ -178,6 +167,10 @@ export function AppSidebar({
             <ChevronsUpDownIcon className="size-4 text-muted-foreground" aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="min-w-56">
+            <DropdownMenuItem render={<Link href="/profile" />}>
+              <UserRoundIcon />
+              Hồ sơ của tôi
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={async () => {
                 await authClient.signOut();

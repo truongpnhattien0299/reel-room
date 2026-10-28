@@ -16,7 +16,7 @@ import {
   user,
 } from "@/db/schema";
 import { auth, isAdmin, requireSession } from "@/lib/auth";
-import { headObject, presignUploadRequest, thumbKey } from "@/lib/r2";
+import { avatarKey, deleteObject, headObject, presignUploadRequest, thumbKey } from "@/lib/r2";
 import {
   ForbiddenError,
   getEffectiveRole,
@@ -542,4 +542,78 @@ export async function resendInvite(userId: string) {
       },
     });
   });
+}
+
+// ---------------------------------------------------------------------------
+// Own profile
+// ---------------------------------------------------------------------------
+
+/** Avatars are 256px WebP made in the browser; anything bigger isn't one. */
+const MAX_AVATAR_BYTES = 512 * 1024;
+
+export async function updateMyName(rawName: string) {
+  const session = await requireSession();
+  return run(async () => {
+    const name = z.string().trim().min(1, "Nhập tên").max(100, "Tên quá dài").parse(rawName);
+    await db.update(user).set({ name }).where(eq(user.id, session.user.id));
+  });
+}
+
+/** Signed PUT for a new avatar under the caller's own prefix. */
+export async function signAvatarUpload() {
+  const session = await requireSession();
+  return run(
+    async () => {
+      const key = avatarKey(session.user.id);
+      const contentType = "image/webp";
+      const url = await presignUploadRequest({ op: "putObject", key, contentType });
+      return { key, url, headers: { "Content-Type": contentType } };
+    },
+    { refresh: false },
+  );
+}
+
+/** Points the profile at an avatar uploaded through `signAvatarUpload`. */
+export async function setMyAvatar(key: string) {
+  const session = await requireSession();
+  return run(async () => {
+    const prefix = `avatars/${session.user.id}/`;
+    if (!key.startsWith(prefix) || !/^[0-9a-f-]{36}\.webp$/.test(key.slice(prefix.length))) {
+      throw new ForbiddenError();
+    }
+    const head = await headObject(key);
+    if (!head) throw new NotFoundError("Ảnh chưa có trên storage");
+    if (head.size > MAX_AVATAR_BYTES) {
+      await deleteObject(key);
+      throw new ForbiddenError("Ảnh quá lớn");
+    }
+    const [prev] = await db
+      .select({ image: user.image })
+      .from(user)
+      .where(eq(user.id, session.user.id));
+    await db.update(user).set({ image: key }).where(eq(user.id, session.user.id));
+    await deleteAvatarObject(prev?.image);
+  });
+}
+
+export async function removeMyAvatar() {
+  const session = await requireSession();
+  return run(async () => {
+    const [prev] = await db
+      .select({ image: user.image })
+      .from(user)
+      .where(eq(user.id, session.user.id));
+    await db.update(user).set({ image: null }).where(eq(user.id, session.user.id));
+    await deleteAvatarObject(prev?.image);
+  });
+}
+
+/** Best effort: a leftover object only costs a few KB. */
+async function deleteAvatarObject(key: string | null | undefined) {
+  if (!key?.startsWith("avatars/")) return;
+  try {
+    await deleteObject(key);
+  } catch (err) {
+    console.error(err);
+  }
 }

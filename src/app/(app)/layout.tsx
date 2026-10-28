@@ -13,7 +13,12 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     <SidebarProvider>
       <AppSidebar
         rootFolders={rootFolders}
-        user={{ name: session.user.name, email: session.user.email }}
+        user={{
+          id: session.user.id,
+          name: session.user.name,
+          email: session.user.email,
+          image: session.user.image ?? null,
+        }}
         isAdmin={isAdmin(session)}
       />
       <UploadProvider>
