@@ -3,6 +3,7 @@
 import {
   ChevronsUpDownIcon,
   ImageIcon,
+  Link2Icon,
   LogOutIcon,
   PlusIcon,
   ShieldIcon,
@@ -80,6 +81,16 @@ export function AppSidebar({
                 >
                   <ImageIcon className={pathname === "/" ? "text-primary" : undefined} />
                   <span>Thư viện</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname === "/links"}
+                  className={itemClass}
+                  render={<Link href="/links" />}
+                >
+                  <Link2Icon className={pathname === "/links" ? "text-primary" : undefined} />
+                  <span>Link chia sẻ</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>

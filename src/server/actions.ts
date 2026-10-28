@@ -15,8 +15,9 @@ import {
   shareLinkFiles,
   shareLinks,
   user,
+  type FolderRole,
 } from "@/db/schema";
-import { auth, isAdmin, requireSession } from "@/lib/auth";
+import { auth, isAdmin, requireSession, type Session } from "@/lib/auth";
 import { avatarKey, deleteObject, headObject, presignUploadRequest, thumbKey } from "@/lib/r2";
 import {
   ForbiddenError,
@@ -28,7 +29,7 @@ import {
 import { INVITE_TTL_DAYS, newInviteToken, resolveInvitation, sendInviteEmail } from "@/server/invitations";
 import { purgeFiles, purgeFolderTree } from "@/server/purge";
 import { listFolderMembers } from "@/server/queries";
-import { listShareLinks, newShareToken } from "@/server/share-links";
+import { listShareLinkFiles, listShareLinks, newShareToken } from "@/server/share-links";
 
 export type ActionResult<T = void> = { error?: string; data?: T };
 
@@ -195,18 +196,20 @@ export async function revokeShare(folderId: string, userId: string) {
 /** Custom expiry dates are capped; "never" is a separate, explicit choice. */
 const MAX_LINK_DAYS = 365;
 
+const expirySchema = z
+  .date()
+  .nullable()
+  .refine((d) => d === null || d.getTime() > Date.now(), "Thời điểm hết hạn phải ở tương lai")
+  .refine(
+    (d) => d === null || d.getTime() <= Date.now() + MAX_LINK_DAYS * 86_400_000,
+    `Thời hạn tối đa ${MAX_LINK_DAYS} ngày`,
+  );
+
 const shareLinkSchema = z.object({
   folderId: z.uuid(),
   /** Share just these files (all in `folderId`); omit to share the whole folder. */
   fileIds: z.array(z.uuid()).min(1, "Chọn ít nhất một file").max(500, "Chọn tối đa 500 file").optional(),
-  expiresAt: z
-    .date()
-    .nullable()
-    .refine((d) => d === null || d.getTime() > Date.now(), "Thời điểm hết hạn phải ở tương lai")
-    .refine(
-      (d) => d === null || d.getTime() <= Date.now() + MAX_LINK_DAYS * 86_400_000,
-      `Thời hạn tối đa ${MAX_LINK_DAYS} ngày`,
-    ),
+  expiresAt: expirySchema,
 });
 
 export async function createShareLink(input: z.input<typeof shareLinkSchema>) {
@@ -254,21 +257,67 @@ export async function getShareLinks(folderId: string) {
   return listShareLinks(session, folderId);
 }
 
+/**
+ * Asserts the user may change or revoke every one of these links: its creator
+ * (still an editor of the folder) or an owner. Works on trashed folders too,
+ * so their links can still be cleaned up.
+ */
+async function requireLinkManager(session: Session, linkIds: string[]) {
+  const links = await db
+    .select({
+      id: shareLinks.id,
+      createdBy: shareLinks.createdBy,
+      folderId: folders.id,
+      path: folders.path,
+      deletedAt: folders.deletedAt,
+    })
+    .from(shareLinks)
+    .innerJoin(folders, eq(folders.id, shareLinks.folderId))
+    .where(inArray(shareLinks.id, linkIds));
+  if (links.length !== new Set(linkIds).size) throw new NotFoundError("Link không tồn tại");
+  const roles = new Map<string, Promise<FolderRole | null>>();
+  for (const link of links) {
+    if (!roles.has(link.folderId)) roles.set(link.folderId, getEffectiveRole(session, link));
+    const role = await roles.get(link.folderId)!;
+    if (role === null) throw new NotFoundError("Link không tồn tại");
+    if (!roleAtLeast(role, "editor") || (link.createdBy !== session.user.id && role !== "owner")) {
+      throw new ForbiddenError("Chỉ người tạo link hoặc chủ sở hữu folder mới thay đổi được link");
+    }
+  }
+  return links;
+}
+
+const linkIdsSchema = z.array(z.uuid()).min(1, "Chọn ít nhất một link").max(500, "Chọn tối đa 500 link");
+
 /** The link's creator or a folder owner may revoke it. */
 export async function deleteShareLink(linkId: string) {
+  return deleteShareLinks([linkId]);
+}
+
+export async function deleteShareLinks(linkIds: string[]) {
   const session = await requireSession();
   return run(async () => {
-    const [link] = await db
-      .select({ folderId: shareLinks.folderId, createdBy: shareLinks.createdBy })
-      .from(shareLinks)
-      .where(eq(shareLinks.id, z.uuid().parse(linkId)));
-    if (!link) throw new NotFoundError("Link không tồn tại");
-    const { role } = await requireFolderRole(session, link.folderId, "editor");
-    if (link.createdBy !== session.user.id && role !== "owner") {
-      throw new ForbiddenError("Chỉ người tạo link hoặc chủ sở hữu folder mới thu hồi được");
-    }
-    await db.delete(shareLinks).where(eq(shareLinks.id, linkId));
+    const ids = linkIdsSchema.parse(linkIds);
+    await requireLinkManager(session, ids);
+    await db.delete(shareLinks).where(inArray(shareLinks.id, ids));
   });
+}
+
+export async function updateShareLinkExpiry(linkId: string, expiresAt: Date | null) {
+  const session = await requireSession();
+  return run(async () => {
+    const [link] = await requireLinkManager(session, [z.uuid().parse(linkId)]);
+    if (link.deletedAt) throw new ForbiddenError("Folder đang trong thùng rác, hãy khôi phục trước");
+    await db
+      .update(shareLinks)
+      .set({ expiresAt: expirySchema.parse(expiresAt) })
+      .where(eq(shareLinks.id, link.id));
+  });
+}
+
+export async function getShareLinkFiles(linkId: string) {
+  const session = await requireSession();
+  return listShareLinkFiles(session, linkId);
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckIcon, CopyIcon, FolderIcon, ImagesIcon, Link2Icon, XIcon } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { absoluteUrl, copyText, CopyLinkField, useCopy } from "@/components/copy-link";
@@ -44,7 +45,7 @@ const isoDay = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** The expiry to send: null for never, undefined while a custom date is missing. */
-function expiryDate({ choice, date }: Expiry): Date | null | undefined {
+export function expiryDate({ choice, date }: Expiry): Date | null | undefined {
   if (choice === "never") return null;
   if (choice === "custom") return date ? new Date(`${date}T23:59:59`) : undefined;
   return new Date(Date.now() + Number(choice) * DAY);
@@ -105,7 +106,7 @@ const linkUrl = (token: string) => absoluteUrl(shareLinkPath(token));
 // Folder links (inside the share dialog)
 // ---------------------------------------------------------------------------
 
-function expiryText(expiresAt: Date | null) {
+export function expiryText(expiresAt: Date | null) {
   if (!expiresAt) return { text: "Không hết hạn", expired: false };
   if (expiresAt.getTime() <= Date.now()) return { text: "Đã hết hạn", expired: true };
   return { text: `Hết hạn ${formatRelative(expiresAt)}`, expired: false };
@@ -236,6 +237,9 @@ export function FolderShareLinks({
           })
         )}
       </ul>
+      <Link href="/links" className="self-start text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+        Quản lý mọi link chia sẻ
+      </Link>
     </div>
   );
 }
@@ -294,7 +298,7 @@ export function ShareFilesDialog({
           <div className="flex flex-col gap-2">
             <CopyLinkField path={shareLinkPath(token)} label="Link chia sẻ" />
             <p className="text-xs text-muted-foreground">
-              Xem lại hoặc thu hồi link trong mục Chia sẻ của folder.
+              Xem lại hoặc thu hồi link ở trang Link chia sẻ.
             </p>
           </div>
         ) : (
