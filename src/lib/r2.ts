@@ -34,6 +34,8 @@ const READ_URL_TTL = 60 * 60;
 
 export const originalKey = (fileId: string) => `files/${fileId}`;
 export const thumbKey = (fileId: string) => `thumbs/${fileId}.webp`;
+/** A fresh key per upload, so a changed avatar never hits a cached copy. */
+export const avatarKey = (userId: string) => `avatars/${userId}/${crypto.randomUUID()}.webp`;
 
 /**
  * Presign the S3 request Uppy's S3 client is about to make. The caller is
