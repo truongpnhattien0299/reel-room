@@ -1,6 +1,6 @@
 "use client";
 
-import { FolderInputIcon, PencilIcon, Trash2Icon, UsersIcon } from "lucide-react";
+import { DownloadIcon, FolderInputIcon, PencilIcon, Trash2Icon, UsersIcon } from "lucide-react";
 import Link from "next/link";
 import { formatRelative } from "@/lib/format";
 import type { FolderStats } from "@/server/queries";
@@ -11,16 +11,18 @@ export type FolderCardActions = {
   onRename?: () => void;
   onMove?: () => void;
   onShare?: () => void;
+  onDownload?: () => void;
   onDelete?: () => void;
 };
 
 type CardFolder = { id: string; name: string } & FolderStats;
 
-function menuActions({ onRename, onMove, onShare, onDelete }: FolderCardActions): MenuAction[] {
+function menuActions({ onRename, onMove, onShare, onDownload, onDelete }: FolderCardActions): MenuAction[] {
   const actions: MenuAction[] = [];
   if (onRename) actions.push({ label: "Đổi tên", icon: PencilIcon, onClick: onRename });
   if (onMove) actions.push({ label: "Di chuyển", icon: FolderInputIcon, onClick: onMove });
   if (onShare) actions.push({ label: "Chia sẻ", icon: UsersIcon, onClick: onShare });
+  if (onDownload) actions.push({ label: "Tải về (.zip)", icon: DownloadIcon, onClick: onDownload });
   if (onDelete) {
     actions.push({ label: "Xoá", icon: Trash2Icon, onClick: onDelete, destructive: true });
   }

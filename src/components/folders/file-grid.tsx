@@ -1,21 +1,25 @@
 "use client";
 
-import { FolderInputIcon, Link2Icon, ListChecksIcon, Trash2Icon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { DownloadIcon, FolderInputIcon, Link2Icon, ListChecksIcon, Trash2Icon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { startZipDownload } from "@/components/download-progress";
 import { MediaViewer } from "@/components/viewer/media-viewer";
 import { type MediaKind, mediaKind } from "@/lib/media";
+import { FILE_SORTS, type FileSort, sortFiles, useStoredSort } from "@/lib/sort";
 import { TRASH_RETENTION_DAYS } from "@/lib/trash";
 import { cn } from "@/lib/utils";
 import { renameFile, restoreFiles, trashFile, trashFiles } from "@/server/actions";
 import type { FileItem } from "@/server/queries";
 import { ConfirmDialog } from "./confirm-dialog";
 import { FileCard } from "./file-card";
+import { useMediaUrls } from "./media-urls";
 import { MoveDialog } from "./move-dialog";
 import { NameDialog } from "./name-dialog";
 import { SelectionToolbar, type ToolbarAction } from "./selection-toolbar";
 import { ShareFilesDialog } from "./share-links";
+import { type SortOption, SortMenu } from "./sort-menu";
 import { backfillThumbnail } from "./thumbnail-backfill";
 
 type Filter = "all" | MediaKind;
@@ -26,6 +30,15 @@ const EMPTY_LABEL: Record<Filter, string> = {
   video: "video",
   audio: "audio",
 };
+
+const SORT_OPTIONS: SortOption<FileSort>[] = [
+  { value: "newest", label: "Mới nhất" },
+  { value: "oldest", label: "Cũ nhất" },
+  { value: "name-asc", label: "Tên A → Z", short: "Tên A→Z" },
+  { value: "name-desc", label: "Tên Z → A", short: "Tên Z→A" },
+  { value: "size", label: "Dung lượng lớn nhất", short: "Lớn nhất" },
+  { value: "duration", label: "Thời lượng dài nhất", short: "Dài nhất" },
+];
 
 export function FileGrid({
   files,
@@ -46,6 +59,11 @@ export function FileGrid({
   initialFileId?: string;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
+  const [savedSort, setSort] = useStoredSort("reelroom:sort:files", FILE_SORTS, "newest");
+  // Only video and audio have a duration to sort by.
+  const timed = filter === "video" || filter === "audio";
+  const sort = savedSort === "duration" && !timed ? "newest" : savedSort;
+  const sortOptions = timed ? SORT_OPTIONS : SORT_OPTIONS.filter((o) => o.value !== "duration");
   const [previewId, setPreviewId] = useState<string | null>(
     initialFileId && files.some((f) => f.id === initialFileId) ? initialFileId : null,
   );
@@ -55,6 +73,7 @@ export function FileGrid({
   const [moving, setMoving] = useState<{ ids: string[]; label: string; bulk?: boolean } | null>(null);
   const [trashing, setTrashing] = useState<string[] | null>(null);
   const canManage = canEdit && folderId !== undefined;
+  const urls = useMediaUrls();
   // Null when not picking files.
   const [selected, setSelected] = useState<Set<string> | null>(null);
   // Anchor for Shift + click ranges.
@@ -64,7 +83,9 @@ export function FileGrid({
 
   const counts: Record<Filter, number> = { all: files.length, image: 0, video: 0, audio: 0 };
   for (const f of files) counts[mediaKind(f)]++;
-  const visible = filter === "all" ? files : files.filter((f) => mediaKind(f) === filter);
+  // Grid, viewer arrows and Shift + click ranges all follow this order.
+  const sorted = useMemo(() => sortFiles(files, sort), [files, sort]);
+  const visible = filter === "all" ? sorted : sorted.filter((f) => mediaKind(f) === filter);
   const previewIndex = previewId ? visible.findIndex((f) => f.id === previewId) : -1;
   const previewFile = previewIndex === -1 ? null : visible[previewIndex];
 
@@ -131,15 +152,27 @@ export function FileGrid({
     return res;
   }
 
+  function downloadPicked() {
+    // One file needs no zip.
+    if (picked.length === 1) window.location.assign(urls.download(picked[0]));
+    else void startZipDownload(urls.zip, { fileIds: picked }, `${folderName} - ${picked.length} file.zip`);
+    exitSelection();
+  }
+
   const toolbarActions: ToolbarAction[] = [
-    {
-      label: "Di chuyển",
-      icon: FolderInputIcon,
-      primary: true,
-      onClick: () => setMoving({ ids: picked, label: `${picked.length} file`, bulk: true }),
-    },
-    { label: "Tạo link", icon: Link2Icon, primary: true, onClick: () => setSharing("open") },
-    { label: "Xoá", icon: Trash2Icon, destructive: true, onClick: () => setTrashing(picked) },
+    { label: "Tải về", icon: DownloadIcon, primary: true, onClick: downloadPicked },
+    ...(canManage
+      ? [
+          {
+            label: "Di chuyển",
+            icon: FolderInputIcon,
+            primary: true,
+            onClick: () => setMoving({ ids: picked, label: `${picked.length} file`, bulk: true }),
+          },
+          { label: "Tạo link", icon: Link2Icon, onClick: () => setSharing("open") },
+          { label: "Xoá", icon: Trash2Icon, destructive: true, onClick: () => setTrashing(picked) },
+        ]
+      : []),
   ];
 
   const chips: { value: Filter; label: string }[] = [
@@ -175,27 +208,30 @@ export function FileGrid({
             </button>
           ))}
         </div>
-        {canManage &&
-          (selected === null ? (
-            <Button variant="outline" size="lg" onClick={() => setSelected(new Set())}>
-              <ListChecksIcon data-icon="inline-start" />
-              Chọn
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="lg"
-              onClick={() =>
-                setSelected(
-                  allVisiblePicked
-                    ? new Set([...selected].filter((id) => !visible.some((f) => f.id === id)))
-                    : new Set([...selected, ...visible.map((f) => f.id)]),
-                )
-              }
-            >
-              {allVisiblePicked ? "Bỏ chọn tất cả" : "Chọn tất cả"}
-            </Button>
-          ))}
+        <div className="flex items-center gap-2">
+          {files.length > 1 && <SortMenu value={sort} options={sortOptions} onChange={setSort} />}
+          {files.length > 0 &&
+            (selected === null ? (
+              <Button variant="outline" size="lg" onClick={() => setSelected(new Set())}>
+                <ListChecksIcon data-icon="inline-start" />
+                Chọn
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="lg"
+                onClick={() =>
+                  setSelected(
+                    allVisiblePicked
+                      ? new Set([...selected].filter((id) => !visible.some((f) => f.id === id)))
+                      : new Set([...selected, ...visible.map((f) => f.id)]),
+                  )
+                }
+              >
+                {allVisiblePicked ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+              </Button>
+            ))}
+        </div>
       </div>
 
       {visible.length === 0 ? (
@@ -228,7 +264,7 @@ export function FileGrid({
         onDelete={canEdit ? (f) => setDeleting(f) : undefined}
       />
 
-      {selected && canManage && (
+      {selected && (
         <SelectionToolbar count={picked.length} actions={toolbarActions} onExit={exitSelection} />
       )}
       {sharing && folderId && (
