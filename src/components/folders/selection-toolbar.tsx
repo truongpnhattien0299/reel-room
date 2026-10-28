@@ -16,21 +16,25 @@ export type ToolbarAction = MenuAction & {
   primary?: boolean;
 };
 
-/** Floating bar over the grid while picking files: count, actions, exit. */
+/** Floating bar over a list while picking items: count, actions, exit. */
 export function SelectionToolbar({
   count,
   actions,
   onExit,
+  label = "File đã chọn",
+  exitLabel = "Thoát chế độ chọn",
 }: {
   count: number;
   actions: ToolbarAction[];
   onExit: () => void;
+  label?: string;
+  exitLabel?: string;
 }) {
   const secondary = actions.filter((a) => !a.primary);
   return (
     <div
       role="toolbar"
-      aria-label="File đã chọn"
+      aria-label={label}
       className="fixed bottom-5 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-1.5 rounded-2xl bg-popover py-2 pr-2 pl-4 shadow-[0_24px_60px_rgba(0,0,0,0.5)] ring-1 ring-[#2a2e37] sm:bottom-8 sm:gap-2"
     >
       <span className="pr-1 text-sm whitespace-nowrap sm:pr-2">
@@ -72,7 +76,7 @@ export function SelectionToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-      <Button variant="ghost" size="icon-lg" aria-label="Thoát chế độ chọn" onClick={onExit}>
+      <Button variant="ghost" size="icon-lg" aria-label={exitLabel} onClick={onExit}>
         <XIcon />
       </Button>
     </div>

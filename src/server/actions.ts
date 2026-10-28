@@ -30,8 +30,8 @@ import {
 } from "@/server/permissions";
 import { type ActivityFilter, type ActivityMeta, listActivity, logActivity, someNames } from "@/server/activity";
 import { INVITE_TTL_DAYS, newInviteToken, resolveInvitation, sendInviteEmail } from "@/server/invitations";
-import { purgeFiles, purgeFolderTree } from "@/server/purge";
-import { grantedOn, listFolderMembers } from "@/server/queries";
+import { purgeTrashed } from "@/server/purge";
+import { grantedOn, listFolderMembers, listTrash } from "@/server/queries";
 import {
   hashLinkPassword,
   LOCK_MINUTES,
@@ -759,122 +759,181 @@ export async function moveFolder(folderId: string, destParentId: string) {
 // Trash: restore and permanent delete
 // ---------------------------------------------------------------------------
 
-/**
- * Loads a trashed folder the user may manage: editor on it, owner when it was
- * a top-level folder (the same rule as trashing it).
- */
-async function requireTrashedFolder(folderId: string) {
-  const session = await requireSession();
-  const [folder] = await db
-    .select()
-    .from(folders)
-    .where(and(eq(folders.id, folderId), isNotNull(folders.deletedAt)));
-  if (!folder) throw new NotFoundError("Không còn trong thùng rác");
-  const role = await getEffectiveRole(session, folder);
-  if (!roleAtLeast(role, folder.parentId === null ? "owner" : "editor")) {
-    throw new ForbiddenError();
-  }
-  return { session, folder };
-}
+const trashItemsSchema = z
+  .array(z.object({ kind: z.enum(["folder", "file"]), id: z.uuid() }))
+  .min(1)
+  .max(500);
 
-async function requireTrashedFile(fileId: string) {
-  const session = await requireSession();
-  const [row] = await db
-    .select({ file: files, folder: folders })
-    .from(files)
-    .innerJoin(folders, eq(folders.id, files.folderId))
-    .where(and(eq(files.id, fileId), isNotNull(files.deletedAt)));
-  if (!row) throw new NotFoundError("Không còn trong thùng rác");
-  if (!roleAtLeast(await getEffectiveRole(session, row.folder), "editor")) {
-    throw new ForbiddenError();
+type TrashRef = z.infer<typeof trashItemsSchema>[number];
+
+/**
+ * Loads trashed folders and files the user may manage — editor on each one,
+ * owner for a top-level folder (the same rule as trashing it). One item
+ * missing or out of reach fails the whole lot.
+ */
+async function requireTrashedItems(session: Session, items: TrashRef[]) {
+  const folderIds = [...new Set(items.filter((i) => i.kind === "folder").map((i) => i.id))];
+  const fileIds = [...new Set(items.filter((i) => i.kind === "file").map((i) => i.id))];
+  const [folderRows, fileRows] = await Promise.all([
+    folderIds.length
+      ? db
+          .select()
+          .from(folders)
+          .where(and(inArray(folders.id, folderIds), isNotNull(folders.deletedAt)))
+      : Promise.resolve([]),
+    fileIds.length
+      ? db
+          .select({ id: files.id, name: files.name, folder: folders })
+          .from(files)
+          .innerJoin(folders, eq(folders.id, files.folderId))
+          .where(and(inArray(files.id, fileIds), isNotNull(files.deletedAt)))
+      : Promise.resolve([]),
+  ]);
+  if (folderRows.length !== folderIds.length || fileRows.length !== fileIds.length) {
+    throw new NotFoundError("Không còn trong thùng rác");
   }
-  return { session, ...row };
+  const roles = new Map<string, FolderRole | null>();
+  const roleOn = async (folder: Folder) => {
+    if (!roles.has(folder.id)) roles.set(folder.id, await getEffectiveRole(session, folder));
+    return roles.get(folder.id)!;
+  };
+  for (const folder of folderRows) {
+    if (!roleAtLeast(await roleOn(folder), folder.parentId === null ? "owner" : "editor")) {
+      throw new ForbiddenError();
+    }
+  }
+  for (const { folder } of fileRows) {
+    if (!roleAtLeast(await roleOn(folder), "editor")) throw new ForbiddenError();
+  }
+  return { folders: folderRows, files: fileRows };
 }
 
 /** Restores the folder and whatever was trashed together with it. */
-export async function restoreFolder(folderId: string) {
-  return run(async () => {
-    const { session, folder } = await requireTrashedFolder(folderId);
-    if (folder.parentId) {
-      const [parent] = await db
-        .select({ deletedAt: folders.deletedAt })
-        .from(folders)
-        .where(eq(folders.id, folder.parentId));
-      if (parent?.deletedAt) {
-        throw new ForbiddenError("Folder cha cũng đang trong thùng rác. Khôi phục folder cha trước.");
-      }
+async function restoreFolderTree(session: Session, folder: Folder) {
+  if (folder.parentId) {
+    const [parent] = await db
+      .select({ deletedAt: folders.deletedAt })
+      .from(folders)
+      .where(eq(folders.id, folder.parentId));
+    if (parent?.deletedAt) {
+      throw new ForbiddenError(`Folder cha của “${folder.name}” cũng đang trong thùng rác. Khôi phục folder cha trước.`);
     }
-    // Items trashed earlier on their own keep their own timestamp and stay put.
-    const stamp = folder.deletedAt!;
-    const inSubtree = or(eq(folders.path, folder.path), like(folders.path, `${folder.path}/%`));
-    await db.batch([
-      db
-        .update(folders)
-        .set({ deletedAt: null, deletedBy: null })
-        .where(and(inSubtree, eq(folders.deletedAt, stamp))),
-      db
-        .update(files)
-        .set({ deletedAt: null, deletedBy: null })
-        .where(
-          and(
-            eq(files.deletedAt, stamp),
-            inArray(files.folderId, db.select({ id: folders.id }).from(folders).where(inSubtree)),
-          ),
+  }
+  // Items trashed earlier on their own keep their own timestamp and stay put.
+  const stamp = folder.deletedAt!;
+  const inSubtree = or(eq(folders.path, folder.path), like(folders.path, `${folder.path}/%`));
+  await db.batch([
+    db
+      .update(folders)
+      .set({ deletedAt: null, deletedBy: null })
+      .where(and(inSubtree, eq(folders.deletedAt, stamp))),
+    db
+      .update(files)
+      .set({ deletedAt: null, deletedBy: null })
+      .where(
+        and(
+          eq(files.deletedAt, stamp),
+          inArray(files.folderId, db.select({ id: folders.id }).from(folders).where(inSubtree)),
         ),
-      logActivity(session, "folder.restore", { folder, meta: { name: folder.name } }),
-    ]);
+      ),
+    logActivity(session, "folder.restore", { folder, meta: { name: folder.name } }),
+  ]);
+}
+
+/** Restores trashed files whose folders are live (re-read: an earlier step may have restored them). */
+async function restoreTrashedFiles(session: Session, rows: { id: string; name: string; folder: Folder }[]) {
+  if (rows.length === 0) return;
+  const folderIds = [...new Set(rows.map((r) => r.folder.id))];
+  const stillTrashed = await db
+    .select({ name: folders.name })
+    .from(folders)
+    .where(and(inArray(folders.id, folderIds), isNotNull(folders.deletedAt)));
+  if (stillTrashed.length) {
+    throw new ForbiddenError(`Folder “${stillTrashed[0].name}” đang trong thùng rác. Khôi phục folder trước.`);
+  }
+  const ids = rows.map((r) => r.id);
+  await db.batch([
+    db
+      .update(files)
+      .set({ deletedAt: null, deletedBy: null })
+      .where(and(inArray(files.id, ids), isNotNull(files.deletedAt))),
+    ...logPerFolder(session, "file.restore", rows),
+  ]);
+}
+
+/**
+ * Restores a mix of trashed folders and files. Parents go before children
+ * and folders before files, so picking a folder together with items trashed
+ * inside it works. Not atomic across folders (each is its own batch); a
+ * failure part-way leaves the rest in the trash.
+ */
+export async function restoreTrashItems(items: TrashRef[]) {
+  const session = await requireSession();
+  return run(async () => {
+    const picked = await requireTrashedItems(session, trashItemsSchema.parse(items));
+    const depth = (f: Folder) => f.path.split("/").length;
+    for (const folder of picked.folders.toSorted((a, b) => depth(a) - depth(b))) {
+      // Re-read: restoring an ancestor may have brought it back already.
+      const [current] = await db.select().from(folders).where(eq(folders.id, folder.id));
+      if (current?.deletedAt) await restoreFolderTree(session, current);
+    }
+    const fileIds = picked.files.map((f) => f.id);
+    const pending = fileIds.length
+      ? await db
+          .select({ id: files.id })
+          .from(files)
+          .where(and(inArray(files.id, fileIds), isNotNull(files.deletedAt)))
+      : [];
+    // Files trashed with a folder restored above are back already.
+    const left = new Set(pending.map((f) => f.id));
+    await restoreTrashedFiles(session, picked.files.filter((f) => left.has(f.id)));
   });
+}
+
+export async function restoreFolder(folderId: string) {
+  return restoreTrashItems([{ kind: "folder", id: folderId }]);
 }
 
 /** Restores trashed files (the "undo" of `trashFiles`): editor on each folder. */
 export async function restoreFiles(fileIds: string[]) {
-  const session = await requireSession();
-  return run(async () => {
-    const ids = fileIdsSchema.parse(fileIds);
-    const rows = await db
-      .select({ name: files.name, folder: folders })
-      .from(files)
-      .innerJoin(folders, eq(folders.id, files.folderId))
-      .where(and(inArray(files.id, ids), isNotNull(files.deletedAt)));
-    if (rows.length !== ids.length) throw new NotFoundError("Không còn trong thùng rác");
-    const byId = new Map(rows.map((r) => [r.folder.id, r.folder]));
-    for (const folder of byId.values()) {
-      if (!roleAtLeast(await getEffectiveRole(session, folder), "editor")) throw new ForbiddenError();
-      if (folder.deletedAt) {
-        throw new ForbiddenError(`Folder “${folder.name}” đang trong thùng rác. Khôi phục folder trước.`);
-      }
-    }
-    await db.batch([
-      db
-        .update(files)
-        .set({ deletedAt: null, deletedBy: null })
-        .where(and(inArray(files.id, ids), isNotNull(files.deletedAt))),
-      ...logPerFolder(session, "file.restore", rows),
-    ]);
-  });
+  return restoreTrashItems(fileIds.map((id) => ({ kind: "file" as const, id })));
 }
 
 export async function restoreFile(fileId: string) {
   return restoreFiles([fileId]);
 }
 
-export async function purgeFolder(folderId: string) {
+/** Permanently deletes a mix of trashed folders and files. */
+export async function purgeTrashItems(items: TrashRef[]) {
+  const session = await requireSession();
   return run(async () => {
-    const { session, folder } = await requireTrashedFolder(folderId);
-    await purgeFolderTree(folder.path);
-    // Not batched: the purge runs its own batch, then deletes from R2.
-    await logActivity(session, "folder.purge", { folder, meta: { name: folder.name } });
+    const picked = await requireTrashedItems(session, trashItemsSchema.parse(items));
+    // Not batched: each purge runs its own batch, then deletes from R2.
+    await purgeTrashed(session, picked);
   });
 }
 
+export async function purgeFolder(folderId: string) {
+  return purgeTrashItems([{ kind: "folder", id: folderId }]);
+}
+
 export async function purgeFile(fileId: string) {
+  return purgeTrashItems([{ kind: "file", id: fileId }]);
+}
+
+/**
+ * Permanently deletes everything in the user's trash they may manage and that
+ * was trashed by `asOf` (when the page was loaded), so items deleted in the
+ * meantime elsewhere aren't swept along unseen. Returns how many items went.
+ */
+export async function emptyTrash(asOf: Date) {
+  const session = await requireSession();
   return run(async () => {
-    const { session, file, folder } = await requireTrashedFile(fileId);
-    await purgeFiles([fileId]);
-    await logActivity(session, "file.purge", {
-      folder,
-      meta: { names: [file.name], count: 1, folderName: folder.name },
-    });
+    const cutoff = z.date().parse(asOf);
+    const items = (await listTrash(session)).filter((i) => i.canManage && i.deletedAt <= cutoff);
+    if (items.length === 0) return 0;
+    await purgeTrashed(session, await requireTrashedItems(session, items));
+    return items.length;
   });
 }
 

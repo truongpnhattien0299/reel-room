@@ -1,6 +1,7 @@
 import { Trash2Icon } from "lucide-react";
 import type { Metadata } from "next";
 import { PageHeader, PageShell } from "@/components/page-header";
+import { EmptyTrashButton } from "@/components/trash/empty-trash-button";
 import { TrashList } from "@/components/trash/trash-list";
 import {
   Empty,
@@ -17,13 +18,20 @@ export const metadata: Metadata = { title: "Thùng rác" };
 
 export default async function TrashPage() {
   const session = await requireSession();
+  const asOf = new Date();
   const items = await listTrash(session);
+  const manageable = items.filter((i) => i.canManage).length;
 
   return (
     <PageShell>
       <PageHeader
         title="Thùng rác"
         description={`Khôi phục hoặc xoá vĩnh viễn. Mục trong thùng rác tự xoá sau ${TRASH_RETENTION_DAYS} ngày.`}
+        actions={
+          manageable > 0 && (
+            <EmptyTrashButton count={manageable} kept={items.length - manageable} asOf={asOf} />
+          )
+        }
       />
       {items.length ? (
         <TrashList items={items} />
