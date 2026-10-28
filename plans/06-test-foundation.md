@@ -12,10 +12,10 @@ Project chưa có test nào: không có thư mục test, `package.json` không c
 Plan 07 (di chuyển) sẽ viết lại `path` của cả cây con, nên cần test trước khi làm.
 
 ## Công cụ
-- **Vitest** (`vitest`, `vite-tsconfig-paths` cho alias `@/`). Môi trường `node`.
+- **Vitest**, môi trường `node`. Alias `@/` khai báo thẳng trong `vitest.config.mts` (không cần `vite-tsconfig-paths`).
 - **PGlite** (`@electric-sql/pglite`) làm Postgres trong bộ nhớ, dùng `drizzle-orm/pglite`. Không cần Docker hay DB thật.
   - Chạy các file trong `drizzle/` theo thứ tự `meta/_journal.json` để có đúng schema.
-  - Migration `0002_search_unaccent.sql` cần extension `unaccent`: nạp `@electric-sql/pglite/contrib/unaccent`. **Cần kiểm tra lúc làm**; nếu không chạy được thì bỏ qua test tìm kiếm và ghi lại.
+  - Migration `0002_search_unaccent.sql` cần extension `unaccent`: nạp `@electric-sql/pglite/contrib/unaccent` (đã kiểm: chạy được).
 - **Thay `@/db`:** `vi.mock("@/db")` trả về instance drizzle PGlite.
   - Driver thật là `neon-http`, có `db.batch([...])`. Drizzle PGlite không có `batch`, nên mock thêm `batch = (qs) => db.transaction(async (tx) => { for (const q of qs) await q })`. Ghi chú trong file setup rằng đây là bản giả lập.
 - **`server-only`:** alias sang file rỗng trong `vitest.config.ts`.
@@ -23,7 +23,7 @@ Plan 07 (di chuyển) sẽ viết lại `path` của cả cây con, nên cần t
 - Server action gọi `requireSession()` và `refresh()`: mock `@/lib/auth` (`requireSession` trả session đang đặt cho test) và `next/cache` (`refresh` no-op).
 
 ## Cấu trúc
-- `vitest.config.ts`
+- `vitest.config.mts` (`.mts` để Vite không cảnh báo ESM trong file CommonJS)
 - `test/setup/db.ts`: tạo PGlite, chạy migration, `resetDb()` (truncate mọi bảng app + `user`) trước mỗi test.
 - `test/setup/factories.ts`: `makeUser`, `makeFolder(parent?)` (tự tính `path`), `grant(user, folder, role)`, `makeFile(folder, opts)`, `makeShareLink(...)`.
 - Test đặt cạnh code: `src/**/*.test.ts`.
@@ -45,8 +45,11 @@ Plan 07 (di chuyển) sẽ viết lại `path` của cả cây con, nên cần t
 - AGENTS.md: sửa dòng Verify thành `pnpm typecheck && pnpm lint && pnpm test && pnpm build`, thêm một dòng: logic quyền mới phải có test.
 
 ## Files
-- **Mới:** `vitest.config.ts`, `test/setup/{db,factories,session}.ts`, các file `*.test.ts` ở trên, `.github/workflows/ci.yml`.
-- **Sửa:** `package.json` (devDeps + scripts), `AGENTS.md`, `tsconfig.json` nếu cần `types: ["vitest/globals"]` (ưu tiên import tường minh từ `vitest` để không cần).
+- **Mới:** `vitest.config.mts`, `test/setup/{db,auth,mocks,factories,empty}.ts`, các file `*.test.ts` ở trên, `.github/workflows/ci.yml`.
+- **Sửa:** `package.json` (devDeps + scripts), `AGENTS.md`. Test import tường minh từ `vitest`, không đổi `tsconfig.json`.
+
+## Lỗi tìm ra khi viết test
+- `listAllShareLinks` xét "người tạo mất quyền" trước "hết hạn", ngược với `resolveShareLink`. Link vừa hết hạn vừa mất quyền thì `/links` báo "Người tạo mất quyền" trong khi khách thấy "Link đã hết hạn". Đã đổi thứ tự trong SQL cho khớp.
 
 ## Verification
 - `pnpm test` pass ở máy local; cố ý sửa sai một điều kiện trong `hasGrant` thì test đỏ.
