@@ -173,9 +173,9 @@ export async function listAllShareLinks(session: Session) {
   const status = sql<ShareLinkStatus>`case
     when ${folders.deletedAt} is not null then 'folder_trashed'
     when coalesce(${user.banned}, false) then 'creator_banned'
+    when ${shareLinks.expiresAt} <= now() then 'expired'
     when ${user.role} is distinct from 'admin'
       and not ${hasGrant(shareLinks.createdBy, folders.path, "editor")} then 'creator_no_access'
-    when ${shareLinks.expiresAt} <= now() then 'expired'
     else 'active'
   end`;
   const canManage = isAdmin(session)
