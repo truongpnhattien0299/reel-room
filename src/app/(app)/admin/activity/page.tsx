@@ -25,7 +25,7 @@ export default async function ActivityPage(props: PageProps<"/admin/activity">) 
   return (
     <PageShell>
       <PageHeader title="Hoạt động" description="Ai đã làm gì trong ReelRoom. Giữ 365 ngày." />
-      <ActivityFilters users={users.map((u) => ({ id: u.id, name: u.name }))} />
+      <ActivityFilters users={users.map((u) => ({ id: u.id, name: u.name, image: u.image }))} />
       <div className="rounded-[18px] bg-card px-5 py-4 ring-1 ring-border">
         <ActivityList
           key={JSON.stringify(filter)}
