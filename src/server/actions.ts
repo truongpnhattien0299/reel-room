@@ -10,6 +10,7 @@ import {
   type Folder,
   files,
   folderPermissions,
+  favorites,
   folders,
   invitations,
   session as sessions,
@@ -477,6 +478,36 @@ export async function unlockShareLink(token: string, password: string) {
     if (after.lockedUntil) throw lockedFor(after.lockedUntil);
     throw new ForbiddenError("Mật khẩu không đúng");
   });
+}
+
+// ---------------------------------------------------------------------------
+// Favorites
+// ---------------------------------------------------------------------------
+
+const favoriteTargetSchema = z.union([z.object({ fileId: z.uuid() }), z.object({ folderId: z.uuid() })]);
+
+/**
+ * Stars or unstars a file or folder for the current user. Starring needs read
+ * access; unstarring never does (it only removes the user's own row).
+ */
+export async function setFavorite(target: z.input<typeof favoriteTargetSchema>, favorite: boolean) {
+  const session = await requireSession();
+  return run(
+    async () => {
+      const t = favoriteTargetSchema.parse(target);
+      const userId = session.user.id;
+      if (!favorite) {
+        const match = "fileId" in t ? eq(favorites.fileId, t.fileId) : eq(favorites.folderId, t.folderId);
+        await db.delete(favorites).where(and(eq(favorites.userId, userId), match));
+        return;
+      }
+      if ("fileId" in t) await requireFileRole(t.fileId, "viewer");
+      else await requireFolderRole(session, t.folderId, "viewer");
+      await db.insert(favorites).values({ userId, ...t }).onConflictDoNothing();
+    },
+    // The star flips on the client right away; nothing else on the page changes.
+    { refresh: false },
+  );
 }
 
 export async function getShareLinkFiles(linkId: string) {

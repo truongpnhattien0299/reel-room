@@ -1,6 +1,8 @@
 "use client";
 
-import { CheckIcon, DownloadIcon, FolderInputIcon, PencilIcon, Trash2Icon } from "lucide-react";
+import { CheckIcon, DownloadIcon, FolderInputIcon, PencilIcon, StarIcon, Trash2Icon } from "lucide-react";
+import { FavoriteButton, favoriteLabel } from "@/components/favorites/favorite-button";
+import { useFavorites } from "@/components/favorites/favorites-provider";
 import { formatBytes } from "@/lib/format";
 import { mediaKind } from "@/lib/media";
 import { cn } from "@/lib/utils";
@@ -29,9 +31,14 @@ export function FileCard({
   onDelete?: () => void;
 }) {
   const urls = useMediaUrls();
+  const favorites = useFavorites();
   const selecting = selected !== undefined;
   const actions: MenuAction[] = [];
   if (!selecting) {
+    if (favorites) {
+      const on = favorites.isFavorite("file", file.id);
+      actions.push({ label: favoriteLabel(on), icon: StarIcon, onClick: () => favorites.toggle("file", file.id) });
+    }
     const download = urls.download;
     if (download) {
       actions.push({ label: "Tải về", icon: DownloadIcon, onClick: () => window.location.assign(download(file.id)) });
@@ -96,6 +103,7 @@ export function FileCard({
           <span className="shrink-0 font-mono text-muted-foreground">{formatBytes(file.size)}</span>
         </span>
       </button>
+      {!selecting && <FavoriteButton kind="file" id={file.id} className="absolute top-2 left-2" />}
     </ItemWithMenu>
   );
 }

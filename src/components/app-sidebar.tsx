@@ -10,6 +10,7 @@ import {
   PlusIcon,
   ShieldIcon,
   SparklesIcon,
+  StarIcon,
   UserRoundIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -86,6 +87,16 @@ export function AppSidebar({
                 >
                   <ImageIcon className={pathname === "/" ? "text-primary" : undefined} />
                   <span>Thư viện</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={pathname === "/favorites"}
+                  className={itemClass}
+                  render={<Link href="/favorites" />}
+                >
+                  <StarIcon className={pathname === "/favorites" ? "text-primary" : undefined} />
+                  <span>Yêu thích</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>

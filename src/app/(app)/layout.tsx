@@ -1,14 +1,16 @@
 import { AppSidebar } from "@/components/app-sidebar";
+import { FavoritesProvider } from "@/components/favorites/favorites-provider";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { UploadPanel } from "@/components/upload/upload-panel";
 import { UploadProvider } from "@/components/upload/upload-provider";
 import { isAdmin, requireSession } from "@/lib/auth";
 import { CURRENT_VERSION } from "@/lib/releases";
+import { listFavoriteIds } from "@/server/favorites";
 import { listRootFolders } from "@/server/queries";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const session = await requireSession();
-  const rootFolders = await listRootFolders(session);
+  const [rootFolders, favoriteIds] = await Promise.all([listRootFolders(session), listFavoriteIds(session)]);
 
   return (
     <SidebarProvider>
@@ -23,10 +25,12 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         isAdmin={isAdmin(session)}
         version={CURRENT_VERSION}
       />
-      <UploadProvider>
-        <SidebarInset>{children}</SidebarInset>
-        <UploadPanel />
-      </UploadProvider>
+      <FavoritesProvider initial={favoriteIds}>
+        <UploadProvider>
+          <SidebarInset>{children}</SidebarInset>
+          <UploadPanel />
+        </UploadProvider>
+      </FavoritesProvider>
     </SidebarProvider>
   );
 }

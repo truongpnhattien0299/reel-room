@@ -2,6 +2,7 @@ import { relations, sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -322,6 +323,28 @@ export const activity = pgTable(
     index("activity_created_idx").on(t.createdAt),
     index("activity_folder_path_idx").on(t.folderPath.op("text_pattern_ops")),
     index("activity_actor_idx").on(t.actorId),
+  ],
+);
+
+/**
+ * Each user's own starred files and folders; nobody else sees them. A row
+ * points at exactly one of the two. Rows survive losing access: the
+ * favorites list hides what the user can no longer open.
+ */
+export const favorites = pgTable(
+  "favorites",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    fileId: uuid("file_id").references(() => files.id, { onDelete: "cascade" }),
+    folderId: uuid("folder_id").references(() => folders.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("favorites_file_uq").on(t.userId, t.fileId).where(sql`${t.fileId} is not null`),
+    uniqueIndex("favorites_folder_uq").on(t.userId, t.folderId).where(sql`${t.folderId} is not null`),
+    check("favorites_one_target", sql`(${t.fileId} is null) <> (${t.folderId} is null)`),
   ],
 );
 

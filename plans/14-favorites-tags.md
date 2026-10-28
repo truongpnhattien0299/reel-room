@@ -84,3 +84,15 @@ export const fileTags = pgTable("file_tags", {
 - `pnpm typecheck && pnpm lint && pnpm test && pnpm build`; `pnpm db:migrate`.
 - 14a: thích một file và một folder → hiện ở `/favorites`; thu quyền user đó ở folder → biến mất.
 - 14b: gắn tag "cưới" cho 5 file ở 2 folder → tìm `#cưới` ra đủ 5; lọc theo tag trong folder đúng.
+
+## Ghi chú khi làm — 14a
+- **Nhánh:** `feat/favorites` tách từ `feat/share-link-options` (PR #23 chưa merge), để migration nối tiếp thành `0007` thay vì trùng `0006`. PR vẫn vào `develop`; khi #23 merge, diff chỉ còn phần yêu thích.
+- **Không thêm `isFavorite` vào từng query:** layout `(app)` nạp danh sách id yêu thích của user một lần (`listFavoriteIds`) vào `FavoritesProvider`. Card file, card folder, folder con và trình xem đều đọc từ đó, nên `getFolderView`, `listRecentFiles` và search không phải sửa. Trang link công khai không có provider nên không hiện sao.
+- **Cập nhật lạc quan:** sao đổi ngay khi bấm; server từ chối thì đổi lại và báo lỗi. Action `setFavorite(target, on)` nhận thẳng trạng thái muốn đặt (thay vì đảo trạng thái hiện tại), nên bấm nhanh nhiều lần không bị lệch.
+- **Phím tắt `S` thay `F`:** trình phát video đã dùng `F` cho toàn màn hình.
+- **Folder con** (dạng hàng): sao nhỏ hiện cạnh tên khi đã thích; bật/tắt qua menu "…" (không đủ chỗ cho nút riêng).
+- **Trên màn cảm ứng:** nút sao chưa bật bị ẩn (không có hover); dùng menu "…". Sao đã bật luôn hiện.
+- **Trang `/favorites`:**
+  - Dùng `FileGrid` với tên nhóm "Yêu thích"; tải zip nhiều file ở nhiều folder vẫn chạy được.
+  - Bỏ thích thì mục ẩn ngay (danh sách lọc theo sao hiện tại, không tải lại).
+- **Bỏ thích không cần quyền đọc:** chỉ xoá dòng của chính user, nên vẫn bỏ được cả mục đã mất quyền.
