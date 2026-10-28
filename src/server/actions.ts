@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, gt, inArray, isNotNull, isNull, like, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, like, ne, or, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -28,7 +28,7 @@ import {
 } from "@/server/permissions";
 import { INVITE_TTL_DAYS, newInviteToken, resolveInvitation, sendInviteEmail } from "@/server/invitations";
 import { purgeFiles, purgeFolderTree } from "@/server/purge";
-import { listFolderMembers } from "@/server/queries";
+import { grantedOn, listFolderMembers } from "@/server/queries";
 import { listShareLinkFiles, listShareLinks, newShareToken } from "@/server/share-links";
 
 export type ActionResult<T = void> = { error?: string; data?: T };
@@ -398,6 +398,120 @@ export async function trashFile(fileId: string) {
       .update(files)
       .set({ deletedAt: new Date(), deletedBy: session.user.id })
       .where(eq(files.id, fileId));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Moving files and folders
+// ---------------------------------------------------------------------------
+
+const MOVE_TARGET_LIMIT = 2000;
+
+/**
+ * Folders the user may move things into (editor and up), for the move dialog,
+ * plus how many of `fileIds` sit in a share link of their current folder and
+ * would be dropped from it by a move.
+ */
+export async function getMoveTargets(fileIds: string[] = []) {
+  const session = await requireSession();
+  return run(
+    async () => {
+      const ids = z.array(z.uuid()).max(500).parse(fileIds);
+      const [rows, [linked]] = await Promise.all([
+        db
+          .select({ id: folders.id, name: folders.name, parentId: folders.parentId, path: folders.path })
+          .from(folders)
+          .where(and(isNull(folders.deletedAt), grantedOn(session, folders.path, "editor")))
+          .orderBy(asc(folders.name))
+          .limit(MOVE_TARGET_LIMIT + 1),
+        ids.length
+          ? db
+              .select({ count: sql<number>`count(distinct ${shareLinkFiles.fileId})::int` })
+              .from(shareLinkFiles)
+              .innerJoin(files, eq(files.id, shareLinkFiles.fileId))
+              .innerJoin(shareLinks, eq(shareLinks.id, shareLinkFiles.linkId))
+              .where(and(inArray(shareLinkFiles.fileId, ids), eq(shareLinks.folderId, files.folderId)))
+          : Promise.resolve([{ count: 0 }]),
+      ]);
+      return {
+        folders: rows.slice(0, MOVE_TARGET_LIMIT),
+        truncated: rows.length > MOVE_TARGET_LIMIT,
+        linkedFiles: linked?.count ?? 0,
+      };
+    },
+    { refresh: false },
+  );
+}
+
+/**
+ * Moves files of one folder into another. Needs editor on both. A "files"
+ * link may only expose files of its own folder, so the moved files leave the
+ * links of the folder they came from.
+ */
+export async function moveFiles(fileIds: string[], destFolderId: string) {
+  const session = await requireSession();
+  return run(async () => {
+    const ids = z.array(z.uuid()).min(1).max(500).parse(fileIds);
+    z.uuid().parse(destFolderId);
+    const rows = await db
+      .select({ folderId: files.folderId })
+      .from(files)
+      .where(and(inArray(files.id, ids), isNull(files.deletedAt)));
+    if (rows.length !== new Set(ids).size) throw new NotFoundError("File không tồn tại");
+    const sourceId = rows[0].folderId;
+    if (rows.some((r) => r.folderId !== sourceId)) {
+      throw new ForbiddenError("Chỉ di chuyển được các file trong cùng một folder");
+    }
+    await requireFolderRole(session, sourceId, "editor");
+    await requireFolderRole(session, destFolderId, "editor");
+    if (sourceId === destFolderId) return;
+    await db.batch([
+      db
+        .update(files)
+        .set({ folderId: destFolderId })
+        .where(and(inArray(files.id, ids), eq(files.folderId, sourceId), isNull(files.deletedAt))),
+      db
+        .delete(shareLinkFiles)
+        .where(
+          and(
+            inArray(shareLinkFiles.fileId, ids),
+            inArray(
+              shareLinkFiles.linkId,
+              db.select({ id: shareLinks.id }).from(shareLinks).where(eq(shareLinks.folderId, sourceId)),
+            ),
+          ),
+        ),
+    ]);
+  });
+}
+
+/**
+ * Moves a subfolder under another folder, rewriting the `path` of its whole
+ * subtree (trashed folders included, so paths stay consistent). Top-level
+ * folders stay where they are: their own grants make up a shared space.
+ */
+export async function moveFolder(folderId: string, destParentId: string) {
+  const session = await requireSession();
+  return run(async () => {
+    z.uuid().parse(folderId);
+    z.uuid().parse(destParentId);
+    const { folder } = await requireFolderRole(session, folderId, "editor");
+    if (folder.parentId === null) throw new ForbiddenError("Không di chuyển được folder gốc");
+    const { folder: dest } = await requireFolderRole(session, destParentId, "editor");
+    if (dest.path === folder.path || dest.path.startsWith(`${folder.path}/`)) {
+      throw new ForbiddenError("Không thể chuyển folder vào chính nó hoặc folder con của nó");
+    }
+    if (folder.parentId === dest.id) return;
+    const newPath = `${dest.path}/${folder.id}`;
+    await db.batch([
+      db
+        .update(folders)
+        .set({
+          path: sql`${newPath} || substr(${folders.path}, ${folder.path.length + 1})`,
+          parentId: sql`case when ${folders.id} = ${folder.id} then ${dest.id}::uuid else ${folders.parentId} end`,
+        })
+        .where(or(eq(folders.path, folder.path), like(folders.path, `${folder.path}/%`))),
+    ]);
   });
 }
 
