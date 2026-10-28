@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   index,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -260,6 +261,60 @@ export const invitations = pgTable(
   (t) => [index("invitations_expires_idx").on(t.expiresAt)],
 );
 
+export const activityAction = pgEnum("activity_action", [
+  "file.upload",
+  "file.rename",
+  "file.move",
+  "file.trash",
+  "file.restore",
+  "file.purge",
+  "folder.create",
+  "folder.rename",
+  "folder.move",
+  "folder.trash",
+  "folder.restore",
+  "folder.purge",
+  // Folder members.
+  "share.grant",
+  "share.revoke",
+  // Public links.
+  "link.create",
+  "link.update",
+  "link.revoke",
+  "user.invite",
+  "user.role",
+  "user.lock",
+  "user.unlock",
+  "user.password",
+]);
+
+/**
+ * Append-only log of who did what. No foreign keys to folders or files: rows
+ * must outlive a permanent delete, so they copy what they need to read on
+ * their own (folder path, names) at the time of the event.
+ */
+export const activity = pgTable(
+  "activity",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Null: the system (the daily cleanup). */
+    actorId: text("actor_id").references(() => user.id, { onDelete: "set null" }),
+    action: activityAction("action").notNull(),
+    /** The folder the event happened in, and its path then (for subtree filters). */
+    folderId: uuid("folder_id"),
+    folderPath: text("folder_path"),
+    targetUserId: text("target_user_id"),
+    /** Names, counts, old/new values: whatever the row needs to read on its own. */
+    meta: jsonb("meta").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("activity_created_idx").on(t.createdAt),
+    index("activity_folder_path_idx").on(t.folderPath.op("text_pattern_ops")),
+    index("activity_actor_idx").on(t.actorId),
+  ],
+);
+
 export const foldersRelations = relations(folders, ({ many }) => ({
   files: many(files),
   permissions: many(folderPermissions),
@@ -285,3 +340,5 @@ export type FileRow = typeof files.$inferSelect;
 export type FolderRole = (typeof folderRole.enumValues)[number];
 export type ShareLink = typeof shareLinks.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
+export type ActivityAction = (typeof activityAction.enumValues)[number];
+export type ActivityRow = typeof activity.$inferSelect;

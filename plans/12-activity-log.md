@@ -64,3 +64,29 @@ export const activity = pgTable("activity", {
 - `pnpm typecheck && pnpm lint && pnpm test && pnpm build`; `pnpm db:migrate` trên DB dev.
 - Upload, đổi tên, chuyển, xoá, khôi phục, tạo link, cấp quyền → mỗi việc hiện đúng một dòng ở `/admin/activity` và trong sheet của folder.
 - Xoá vĩnh viễn folder → dòng cũ vẫn đọc được tên folder.
+
+## Ghi chú khi làm
+- **Nhánh tạo từ `develop`.** Sẽ xung đột nhẹ với #19 (header `/f/[id]`) và #21 (sidebar): cả hai cùng thêm nút/mục ở đúng chỗ đó.
+- **Ghi cùng batch:** `logActivity` trả câu insert; mọi action đổi DB bằng một câu đã chuyển sang `db.batch([..., log])`. Thao tác bị từ chối (thiếu quyền, dữ liệu sai) ném lỗi trước batch nên không ghi gì; có test cho việc này.
+- **Ngoại lệ không cùng batch:**
+  - Xoá vĩnh viễn (`purgeFolderTree` / `purgeFiles` tự chạy batch rồi xoá R2) → ghi ngay sau.
+  - `sendPasswordReset` và `setUserPassword` gọi Better Auth trước → ghi sau.
+- **Hàng loạt:**
+  - Xoá/khôi phục file có thể trải nhiều folder → **một dòng mỗi folder**, để sheet của từng folder vẫn đúng.
+  - Thu hồi nhiều link cũng vậy.
+- **Di chuyển** ghi ở **folder nguồn** (path tại lúc chuyển), meta có `from`/`to`. Owner folder đích chỉ thấy file mới xuất hiện, không thấy dòng nhật ký. Muốn cả hai bên thấy thì ghi 2 dòng; để sau nếu cần.
+- **Upload:** một dòng mỗi file. `ActivityList` gộp các upload liền nhau của cùng người, cùng folder, cùng ngày thành "đã upload N file".
+- **Không ghi** những thao tác ngoài enum của plan: đổi hồ sơ user, thu hồi lời mời, đăng xuất mọi phiên, đổi avatar, thumbnail. Revoke một người không còn là thành viên → không làm gì, không ghi.
+- **`createdAt` đặt từ JS** (độ chính xác mili-giây), để con trỏ phân trang `(created_at, id)` khớp chính xác. Postgres `now()` có micro-giây sẽ làm lệch con trỏ.
+- **Ngày / giờ:**
+  - Bộ lọc ngày và nhóm "Hôm nay"/"Hôm qua" theo giờ Việt Nam (`+07:00`, `Asia/Ho_Chi_Minh`), để server render (UTC trên Vercel) và client ra cùng kết quả.
+  - Giờ tương đối có `suppressHydrationWarning`.
+- **Sidebar:** "Quản lý user" giờ chỉ sáng ở `/admin/users*`; thêm "Hoạt động" (`HistoryIcon`).
+- **Nút "Hoạt động"** trên header folder chỉ hiện cho owner (admin là owner mọi nơi). Server vẫn kiểm `owner` trong `listActivity`.
+- **Bộ lọc admin** nằm trên URL (`?actor=&group=&from=&to=`). Giá trị sai bị bỏ qua thay vì làm lỗi trang.
+- **Đã chạy `pnpm db:migrate`** trên DB dev.
+- **Thử trên trình duyệt:**
+  - Tạo folder → xoá file → khôi phục từ thùng rác → xoá folder → xoá vĩnh viễn. Mỗi việc ra đúng một dòng ở `/admin/activity` và trong sheet của folder.
+  - Dòng của folder đã xoá vĩnh viễn vẫn đọc được tên.
+  - Lọc `group=folder` đúng.
+  - Không có cảnh báo hydration; ở 375px không tràn ngang.

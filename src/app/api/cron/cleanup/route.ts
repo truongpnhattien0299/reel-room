@@ -1,9 +1,10 @@
 import { and, eq, isNotNull, isNull, lt, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db";
-import { files, folders, invitations, shareLinks } from "@/db/schema";
+import { activity, files, folders, invitations, shareLinks } from "@/db/schema";
 import { deleteObject, thumbKey } from "@/lib/r2";
 import { TRASH_RETENTION_DAYS } from "@/lib/trash";
+import { ACTIVITY_RETENTION_DAYS, logActivity, someNames } from "@/server/activity";
 import { purgeFiles, purgeFolderTree } from "@/server/purge";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -14,7 +15,9 @@ const DAY = 24 * 60 * 60 * 1000;
  *   removed by the R2 lifecycle rule, not here);
  * - permanently delete what has sat in the trash past the retention period;
  * - drop share links expired for a while (kept a bit so visitors are told
- *   "expired" rather than "invalid"), and likewise unused invites.
+ *   "expired" rather than "invalid"), and likewise unused invites;
+ * - drop activity rows past their retention.
+ * Purges are logged with no actor ("Hệ thống").
  */
 export async function GET(req: Request) {
   if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -34,7 +37,7 @@ export async function GET(req: Request) {
   // Folders trashed directly (not as part of a parent): purge each subtree.
   const parent = alias(folders, "parent");
   const expiredFolders = await db
-    .select({ path: folders.path })
+    .select({ id: folders.id, path: folders.path, name: folders.name })
     .from(folders)
     .leftJoin(parent, eq(parent.id, folders.parentId))
     .where(
@@ -45,14 +48,32 @@ export async function GET(req: Request) {
       ),
     );
   let purgedFiles = 0;
-  for (const f of expiredFolders) purgedFiles += await purgeFolderTree(f.path);
+  for (const f of expiredFolders) {
+    purgedFiles += await purgeFolderTree(f.path);
+    await logActivity(null, "folder.purge", { folder: f, meta: { name: f.name } });
+  }
 
   // Files trashed on their own.
   const expiredFiles = await db
-    .select({ id: files.id })
+    .select({ id: files.id, name: files.name, folder: { id: folders.id, path: folders.path, name: folders.name } })
     .from(files)
+    .innerJoin(folders, eq(folders.id, files.folderId))
     .where(and(isNotNull(files.deletedAt), lt(files.deletedAt, cutoff)));
   purgedFiles += await purgeFiles(expiredFiles.map((f) => f.id));
+  const byFolder = Map.groupBy(expiredFiles, (f) => f.folder.id);
+  for (const group of byFolder.values()) {
+    const { folder } = group[0];
+    const names = group.map((f) => f.name);
+    await logActivity(null, "file.purge", {
+      folder,
+      meta: { names: someNames(names), count: names.length, folderName: folder.name },
+    });
+  }
+
+  const oldActivity = await db
+    .delete(activity)
+    .where(lt(activity.createdAt, new Date(Date.now() - ACTIVITY_RETENTION_DAYS * DAY)))
+    .returning({ id: activity.id });
 
   const expiredLinks = await db
     .delete(shareLinks)
@@ -66,6 +87,7 @@ export async function GET(req: Request) {
 
   return Response.json({
     abandonedUploads: stale.length,
+    expiredActivity: oldActivity.length,
     expiredInvites: expiredInvites.length,
     expiredLinks: expiredLinks.length,
     purgedFolders: expiredFolders.length,

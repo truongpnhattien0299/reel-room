@@ -106,7 +106,7 @@ Dịch vụ SMTP khác (Brevo, Mailgun, SES…) điền host/port/user/pass củ
 
 ```
 src/
-  app/(app)/            trang cần đăng nhập: /, /f/[folderId], /admin/users
+  app/(app)/            trang cần đăng nhập: /, /f/[folderId], /admin/users, /admin/activity
   app/invite/[token]/   tạo tài khoản từ link mời (công khai)
   app/api/uploads/      đăng ký, ký request R2, hoàn tất, huỷ upload
   app/api/files/        redirect tới file gốc / thumbnail đã ký
