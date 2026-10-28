@@ -1,9 +1,10 @@
 "use client";
 
-import { FolderInputIcon, Link2Icon, ListChecksIcon, Trash2Icon } from "lucide-react";
+import { DownloadIcon, FolderInputIcon, Link2Icon, ListChecksIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { startZipDownload } from "@/components/download-progress";
 import { MediaViewer } from "@/components/viewer/media-viewer";
 import { type MediaKind, mediaKind } from "@/lib/media";
 import { TRASH_RETENTION_DAYS } from "@/lib/trash";
@@ -12,6 +13,7 @@ import { renameFile, restoreFiles, trashFile, trashFiles } from "@/server/action
 import type { FileItem } from "@/server/queries";
 import { ConfirmDialog } from "./confirm-dialog";
 import { FileCard } from "./file-card";
+import { useMediaUrls } from "./media-urls";
 import { MoveDialog } from "./move-dialog";
 import { NameDialog } from "./name-dialog";
 import { SelectionToolbar, type ToolbarAction } from "./selection-toolbar";
@@ -55,6 +57,7 @@ export function FileGrid({
   const [moving, setMoving] = useState<{ ids: string[]; label: string; bulk?: boolean } | null>(null);
   const [trashing, setTrashing] = useState<string[] | null>(null);
   const canManage = canEdit && folderId !== undefined;
+  const urls = useMediaUrls();
   // Null when not picking files.
   const [selected, setSelected] = useState<Set<string> | null>(null);
   // Anchor for Shift + click ranges.
@@ -131,15 +134,27 @@ export function FileGrid({
     return res;
   }
 
+  function downloadPicked() {
+    // One file needs no zip.
+    if (picked.length === 1) window.location.assign(urls.download(picked[0]));
+    else void startZipDownload(urls.zip, { fileIds: picked }, `${folderName} - ${picked.length} file.zip`);
+    exitSelection();
+  }
+
   const toolbarActions: ToolbarAction[] = [
-    {
-      label: "Di chuyển",
-      icon: FolderInputIcon,
-      primary: true,
-      onClick: () => setMoving({ ids: picked, label: `${picked.length} file`, bulk: true }),
-    },
-    { label: "Tạo link", icon: Link2Icon, primary: true, onClick: () => setSharing("open") },
-    { label: "Xoá", icon: Trash2Icon, destructive: true, onClick: () => setTrashing(picked) },
+    { label: "Tải về", icon: DownloadIcon, primary: true, onClick: downloadPicked },
+    ...(canManage
+      ? [
+          {
+            label: "Di chuyển",
+            icon: FolderInputIcon,
+            primary: true,
+            onClick: () => setMoving({ ids: picked, label: `${picked.length} file`, bulk: true }),
+          },
+          { label: "Tạo link", icon: Link2Icon, onClick: () => setSharing("open") },
+          { label: "Xoá", icon: Trash2Icon, destructive: true, onClick: () => setTrashing(picked) },
+        ]
+      : []),
   ];
 
   const chips: { value: Filter; label: string }[] = [
@@ -175,7 +190,7 @@ export function FileGrid({
             </button>
           ))}
         </div>
-        {canManage &&
+        {files.length > 0 &&
           (selected === null ? (
             <Button variant="outline" size="lg" onClick={() => setSelected(new Set())}>
               <ListChecksIcon data-icon="inline-start" />
@@ -228,7 +243,7 @@ export function FileGrid({
         onDelete={canEdit ? (f) => setDeleting(f) : undefined}
       />
 
-      {selected && canManage && (
+      {selected && (
         <SelectionToolbar count={picked.length} actions={toolbarActions} onExit={exitSelection} />
       )}
       {sharing && folderId && (

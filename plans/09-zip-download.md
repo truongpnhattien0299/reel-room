@@ -53,3 +53,12 @@ Không cần migration.
 - Safari: folder nhỏ tải được bằng Blob; folder > 2 GB hiện thông báo thay vì treo tab.
 - Link công khai: tải tất cả hoạt động khi chưa đăng nhập.
 - Network tab: không có request tải file nào đi qua domain app (chỉ R2).
+
+## Ghi chú khi làm
+- Endpoint zip nằm trong `MediaUrls` (`urls.zip`), nên `FileGrid` và nút tải tự dùng đúng route thành viên hay route công khai, không cần prop mới.
+- Hộp chọn chỗ lưu (`showSaveFilePicker`) mở **trước** khi gọi API, để còn trong "user gesture"; tên gợi ý lấy ở client (`<tên folder>.zip`).
+- Tiến trình hiện bằng toast của sonner (thanh tiến trình + nút Huỷ), không dùng lại panel upload.
+- Chế độ chọn giờ bật cho mọi người (viewer, khách qua link) vì ai cũng có "Tải về". Điện thoại: Tải về + Di chuyển là nút chính.
+- Link kiểu "files": "Tải tất cả" tải mọi file của link; `folderId` bị bỏ qua.
+- CORS trong README đã có `GET`, không cần sửa.
+- Chưa kiểm trên Safari thật; nhánh Blob đã kiểm bằng cách tắt `showSaveFilePicker` trong Chromium.

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache, Fragment } from "react";
+import { DownloadFolderButton } from "@/components/folders/download-folder-button";
 import { FileGrid } from "@/components/folders/file-grid";
 import { FolderGrid } from "@/components/folders/folder-grid";
 import { NewFolderButton } from "@/components/folders/new-folder-button";
@@ -94,6 +95,7 @@ export default async function FolderPage(props: PageProps<"/f/[folderId]">) {
               {canEdit && (
                 <ShareButton folder={view.folder} role={view.role} currentUserId={session.user.id} />
               )}
+              {!isEmpty && <DownloadFolderButton folder={view.folder} />}
               {canEdit && <NewFolderButton parentId={view.folder.id} />}
               {canEdit && <UploadButton folderId={view.folder.id} />}
             </>

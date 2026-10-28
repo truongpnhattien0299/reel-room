@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { startZipDownload } from "@/components/download-progress";
 import type { FolderRole } from "@/db/schema";
 import { renameFolder, trashFolder } from "@/server/actions";
 import type { FolderStats } from "@/server/queries";
 import { ConfirmDialog } from "./confirm-dialog";
 import { FolderCard, SubfolderCard } from "./folder-card";
+import { useMediaUrls } from "./media-urls";
 import { MoveDialog } from "./move-dialog";
 import { NameDialog } from "./name-dialog";
 import { ShareDialog } from "./share-dialog";
@@ -36,6 +38,7 @@ export function FolderGrid({
 }) {
   const [renaming, setRenaming] = useState<GridFolder | null>(null);
   const [moving, setMoving] = useState<GridFolder | null>(null);
+  const urls = useMediaUrls();
   const [sharing, setSharing] = useState<GridFolder | null>(null);
   const [deleting, setDeleting] = useState<GridFolder | null>(null);
   // Library roots get cover cards; subfolders inside a folder get compact rows.
@@ -57,6 +60,7 @@ export function FolderGrid({
             onRename={can.rename(f.role) ? () => setRenaming(f) : undefined}
             onMove={parentId && can.move(f.role, isRoot) ? () => setMoving(f) : undefined}
             onShare={can.share(f.role) ? () => setSharing(f) : undefined}
+            onDownload={() => void startZipDownload(urls.zip, { folderId: f.id }, `${f.name}.zip`)}
             onDelete={can.delete(f.role, isRoot) ? () => setDeleting(f) : undefined}
           />
         ))}

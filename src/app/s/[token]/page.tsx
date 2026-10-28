@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Fragment } from "react";
 import { ReelMark, Wordmark } from "@/components/brand/reel-mark";
+import { DownloadFolderButton } from "@/components/folders/download-folder-button";
 import { FileGrid } from "@/components/folders/file-grid";
 import { SubfolderCard } from "@/components/folders/folder-card";
 import { SharedMediaUrls } from "@/components/folders/media-urls";
@@ -102,10 +103,13 @@ export default async function SharedPage(props: PageProps<"/s/[token]">) {
             <h1 className="font-display text-[34px] leading-[1.05] font-bold tracking-[-0.03em] break-words sm:text-[44px]">
               {view.folder.name}
             </h1>
-            <p className="font-mono text-xs text-muted-foreground">
-              {view.files.length} file · {formatBytes(totalSize)}
-              {view.subfolders.length > 0 && ` · ${view.subfolders.length} folder con`}
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="font-mono text-xs text-muted-foreground">
+                {view.files.length} file · {formatBytes(totalSize)}
+                {view.subfolders.length > 0 && ` · ${view.subfolders.length} folder con`}
+              </p>
+              {!isEmpty && <DownloadFolderButton folder={view.folder} label="Tải tất cả" />}
+            </div>
           </header>
 
           {view.subfolders.length > 0 && (
